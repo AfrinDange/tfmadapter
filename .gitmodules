@@ -1,0 +1,6 @@
+[submodule "chronos-forecasting"]
+	path = chronos-forecasting
+	url = https://github.com/AfrinDange/chronos.git
+[submodule "uni2ts"]
+	path = uni2ts
+	url = https://github.com/AfrinDange/moirai.git

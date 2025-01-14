@@ -9,7 +9,7 @@ dynamic = [
 ]
 dependencies = [
   "pandas==2.0.0",
-  "gluonts~=0.15.1",
+  "gluonts~=0.14.3",
   "numpy~=1.26.0",
   "einops==0.7.*",
   "python-dotenv==1.0.0",

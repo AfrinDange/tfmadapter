@@ -24,13 +24,15 @@ import datasets
 from dotenv import load_dotenv
 from gluonts.dataset import DataEntry
 from gluonts.dataset.common import ProcessDataEntry
-from gluonts.dataset.split import TestData, TrainingDataset, split
 from gluonts.itertools import Map
 from gluonts.time_feature import norm_freq_str
 from gluonts.transform import Transformation
 from pandas.tseries.frequencies import to_offset
 import pyarrow.compute as pc
 from toolz import compose
+
+from gift_eval.dataset_split import TestData, TrainingDataset, split
+
 
 TEST_SPLIT = 0.1
 MAX_WINDOW = 20
@@ -121,6 +123,7 @@ class Dataset:
 
         self.gluonts_dataset = Map(compose(process, itemize_start), self.hf_dataset)
         if to_univariate:
+            print("Applying this!")
             self.gluonts_dataset = MultivariateToUnivariate("target").apply(
                 self.gluonts_dataset
             )
@@ -163,6 +166,24 @@ class Dataset:
             > 1
         ):
             return past_feat_dynamic_real.shape[0]
+        else:
+            return 1
+
+    @cached_property
+    def feat_dynamic_real_dim(self) -> int:
+        if "feat_dynamic_real" not in self.hf_dataset[0]:
+            return 0
+        elif (
+            len(
+                (
+                    feat_dynamic_real := self.hf_dataset[0][
+                        "feat_dynamic_real"
+                    ]
+                ).shape
+            )
+            > 1
+        ):
+            return feat_dynamic_real.shape[0]
         else:
             return 1
 
@@ -218,5 +239,17 @@ class Dataset:
             prediction_length=self.prediction_length,
             windows=self.windows,
             distance=self.prediction_length,
+        )
+        return test_data
+
+    def custom_test_data(self, context_length, prediction_length, windows, distance) -> TestData:
+        _, test_template = split(
+            self.gluonts_dataset, offset=-prediction_length * windows
+        )
+        test_data = test_template.generate_instances(
+            prediction_length=prediction_length,
+            windows=windows,
+            distance=distance,
+            max_history=context_length,
         )
         return test_data

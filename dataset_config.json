@@ -1,0 +1,47 @@
+{
+    "NP": {
+        "context_length": 672,
+        "smaller_context": 504,
+        "rolling_window_size": 168, 
+        "prediction_length": 168,
+        "windows": 104,
+        "distance": 24,
+        "to_univariate": false
+    },
+    "PJM": {
+        "context_length": 672,
+        "smaller_context": 504,
+        "rolling_window_size": 168, 
+        "prediction_length": 168,
+        "windows": 104,
+        "distance": 24,
+        "to_univariate": false
+    },
+    "BE": {
+        "context_length": 672,
+        "smaller_context": 504,
+        "rolling_window_size": 168, 
+        "prediction_length": 168,
+        "windows": 104,
+        "distance": 24,
+        "to_univariate": false
+    },
+    "FR": {
+        "context_length": 672,
+        "smaller_context": 504,
+        "rolling_window_size": 168, 
+        "prediction_length": 168,
+        "windows": 52,
+        "distance": 24,
+        "to_univariate": false
+    },
+    "DE": {
+        "context_length": 672,
+        "smaller_context": 504,
+        "rolling_window_size": 168, 
+        "prediction_length": 168,
+        "windows": 104,
+        "distance": 24,
+        "to_univariate": false
+    }
+}
