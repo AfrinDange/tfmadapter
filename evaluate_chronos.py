@@ -94,6 +94,8 @@ def create_result_logger(csv_file_path):
                     "num_past_k",
                     "rolling_window_size",
                     "use_fixed_history",
+                    "use_positions",
+                    "pos_dims"
                 ]
             )
 
@@ -134,11 +136,15 @@ def run_eval(ds_name, dataset, args, ds_config, use_covariates, save_dir):
             num_samples=20,
             prediction_length=ds_config["prediction_length"],
             save_dir=save_dir,
+            seasonality=season_length,
+            use_covariates=use_covariates,
             model_config=args.model_config,
             test_run=args.test_run,
             ds_config=ds_config,
             device_map="cuda",
         )
+
+    print(season_length)
 
     res = evaluate_model(
         predictor,
@@ -157,7 +163,7 @@ def run_eval(ds_name, dataset, args, ds_config, use_covariates, save_dir):
             writer.writerow(
                 [
                     config,
-                    "moirai_small",
+                    args.model_name,
                     # res["MSE[mean]"][0],
                     res["MSE[0.5]"][0],
                     res["MAE[0.5]"][0],
@@ -177,6 +183,8 @@ def run_eval(ds_name, dataset, args, ds_config, use_covariates, save_dir):
                     ds_config["num_past_k"],
                     ds_config["rolling_window_size"],
                     ds_config["use_fixed_history"],
+                    ds_config["use_positions"],
+                    ds_config["pos_dims"],
                 ]
             )
 

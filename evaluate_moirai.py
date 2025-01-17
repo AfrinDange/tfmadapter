@@ -119,15 +119,16 @@ def run_eval(ds_name, dataset, args, ds_config, use_covariates, save_dir):
         model.hparams.past_feat_dynamic_real_dim = dataset.past_feat_dynamic_real_dim
         model.hparams.feat_dynamic_real_dim = dataset.feat_dynamic_real_dim
 
+    season_length = get_seasonality(dataset.freq)
+
     predictor = model.create_predictor(
         batch_size=args.batch_size, 
+        seasonality=season_length,
         save_dir=save_dir, 
         model_config=args.model_config, 
         test_run=args.test_run,
         ds_config=ds_config,
     )
-
-    season_length = get_seasonality(dataset.freq)
 
     res = evaluate_model(
         predictor,
