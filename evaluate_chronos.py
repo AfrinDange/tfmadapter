@@ -36,8 +36,19 @@ parser.add_argument("--model_config", type=str) #, choices=["moirai_no_cov", "mo
 parser.add_argument("--batch_size", type=int, default=64)
 parser.add_argument("--test_run", action="store_true")
 parser.add_argument("--dataset_config", type=str, required=True)
-parser.add_argument("--patch_size", type=int, default=32)
 parser.add_argument("--model_name", type=str, required=True)
+
+parser.add_argument("--filter_outliers", action="store_true")
+parser.add_argument("--context_length", type=int)
+parser.add_argument("--smaller_context", type=int)
+parser.add_argument("--rolling_window_size", type=int)
+parser.add_argument("--prediction_length", type=int)
+parser.add_argument("--windows", type=int)
+parser.add_argument("--num_past_k", type=int)
+parser.add_argument("--distance", type=int)
+parser.add_argument("--use_fixed_history", action="store_true")
+parser.add_argument("--use_positions", action="store_true")
+parser.add_argument("--pos_dims", type=int)
 
 metrics = [
     # MSE(forecast_type="mean"),
@@ -94,8 +105,11 @@ def create_result_logger(csv_file_path):
                     "num_past_k",
                     "rolling_window_size",
                     "use_fixed_history",
+                    "windows",
+                    "distance",
                     "use_positions",
-                    "pos_dims"
+                    "pos_dims",
+                    "filter_outliers",
                 ]
             )
 
@@ -183,8 +197,11 @@ def run_eval(ds_name, dataset, args, ds_config, use_covariates, save_dir):
                     ds_config["num_past_k"],
                     ds_config["rolling_window_size"],
                     ds_config["use_fixed_history"],
+                    ds_config["windows"],
+                    ds_config["distance"],
                     ds_config["use_positions"],
                     ds_config["pos_dims"],
+                    ds_config["filter_outliers"],
                 ]
             )
 
@@ -199,6 +216,13 @@ if __name__ == "__main__":
     # list of eval datasets
     all_datasets = list(set(args.dataset_names.split()))
     ds_config=json.load(open(f"{args.dataset_config}.json"))
+
+    for config in ["filter_outliers", "context_length", "smaller_context", "rolling_window_size", "prediction_length", "windows", "num_past_k", "distance", "use_fixed_history", "use_positions", "pos_dims"]:
+        if getattr(args, config, None) is not None:
+            for ds_name in all_datasets:
+                print(f"Overriding {config} for {ds_name} to {getattr(args, config, None)}")
+                ds_config[ds_name][config] = getattr(args, config, None)
+
 
     use_covariates="with_cov" in args.model_config
 

@@ -4,3 +4,6 @@
 [submodule "uni2ts"]
 	path = uni2ts
 	url = https://github.com/AfrinDange/moirai.git
+[submodule "timesfm"]
+	path = timesfm
+	url = https://github.com/AfrinDange/timesfm.git

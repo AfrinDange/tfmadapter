@@ -187,10 +187,10 @@ def load_general_datasets(dataset, target_col, cov_cols, date_col, freq, citatio
 if __name__ == "__main__":
     # load_epf_datasets()
     # load_bench_vldb_datasets()
-    # load_covid_datasets()
+    load_covid_datasets()
     
     # electric_consumption
-    # load_general_datasets(dataset="electric_consumption", target_col="Consumption", cov_cols=["Homestead_maxtempC", "Homestead_mintempC", "Homestead_DewPointC", "Homestead_FeelsLikeC", "Homestead_HeatIndexC", "Homestead_WindChillC", "Homestead_WindGustKmph", "Homestead_cloudcover", "Homestead_humidity", "Homestead_precipMM", "Homestead_pressure", "Homestead_tempC", "Homestead_visibility", "Homestead_winddirDegree", "Homestead_windspeedKmph"], date_col="Date", freq="h", citation="https://www.kaggle.com/datasets/unajtheb/homesteadus-electricity-consumption")
+    load_general_datasets(dataset="electric_consumption", target_col="Consumption", cov_cols=["Homestead_maxtempC", "Homestead_mintempC", "Homestead_DewPointC", "Homestead_FeelsLikeC", "Homestead_HeatIndexC", "Homestead_WindChillC", "Homestead_WindGustKmph", "Homestead_cloudcover", "Homestead_humidity", "Homestead_precipMM", "Homestead_pressure", "Homestead_tempC", "Homestead_visibility", "Homestead_winddirDegree", "Homestead_windspeedKmph"], date_col="Date", freq="h", citation="https://www.kaggle.com/datasets/unajtheb/homesteadus-electricity-consumption")
 
     load_general_datasets(dataset="electric_demand",  target_col="Electric_demand", cov_cols=['Temperature', 'GHI', 'Humidity', 'Season', 'PV_production', 'Day_of_the_week', 'Wind_speed', 'DHI', 'Wind_production', 'DNI'], date_col="Time", freq="5T", citation="Rojas Ortega, Sebastian; Castro-Correa, Paola; Sepúlveda-Mora, Sergio; Castro-Correa, Jhon (2023), “Renewable Energy and Electricity Demand Time Series Dataset with Exogenous Variables at 5-minute Interval”, Mendeley Data, V1, doi: 10.17632/fdfftr3tc2.1")
 

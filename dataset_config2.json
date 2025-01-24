@@ -6,9 +6,11 @@
         "prediction_length": 24,
         "windows": 728,
         "distance": 24,
-        "num_past_k": 0,
+        "num_past_k": 4,
         "to_univariate": false,
-        "use_fixed_history": false
+        "use_fixed_history": false,
+        "use_positions": true,
+        "pos_dims": 4
     },
     "PJM": {
         "context_length": 672,
@@ -17,9 +19,11 @@
         "prediction_length": 24,
         "windows": 728,
         "distance": 24,
-        "num_past_k": 0,
+        "num_past_k": 4,
         "to_univariate": false,
-        "use_fixed_history": false
+        "use_fixed_history": false,
+        "use_positions": true,
+        "pos_dims": 4
     },
     "BE": {
         "context_length": 672,
@@ -28,9 +32,11 @@
         "prediction_length": 24,
         "windows": 728,
         "distance": 24,
-        "num_past_k": 0,
+        "num_past_k": 4,
         "to_univariate": false,
-        "use_fixed_history": false
+        "use_fixed_history": false,
+        "use_positions": true,
+        "pos_dims": 4
     },
     "FR": {
         "context_length": 672,
@@ -39,9 +45,11 @@
         "prediction_length": 24,
         "windows": 363,
         "distance": 24,
-        "num_past_k": 0,
+        "num_past_k": 4,
         "to_univariate": false,
-        "use_fixed_history": false
+        "use_fixed_history": false,
+        "use_positions": true,
+        "pos_dims": 4
     },
     "DE": {
         "context_length": 672,
@@ -50,9 +58,11 @@
         "prediction_length": 24,
         "windows": 728,
         "distance": 24,
-        "num_past_k": 0,
+        "num_past_k": 4,
         "to_univariate": false,
-        "use_fixed_history": false
+        "use_fixed_history": false,
+        "use_positions": true,
+        "pos_dims": 4
     },
     "covid-national": {
         "context_length": 112,
@@ -66,6 +76,17 @@
         "use_fixed_history": false
     },
     "electric_consumption": {
+        "context_length": 512,
+        "smaller_context": 128,
+        "rolling_window_size": 96, 
+        "prediction_length": 96,
+        "windows": 50,
+        "distance": 96,
+        "num_past_k": 0,
+        "to_univariate": false,
+        "use_fixed_history": false
+    },
+    "electric_demand": {
         "context_length": 512,
         "smaller_context": 128,
         "rolling_window_size": 96, 

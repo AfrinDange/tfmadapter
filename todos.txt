@@ -1,0 +1,9 @@
+# adaptor files with methods
+    
+
+# FM models
+    => FM_predictor
+    => FM+adaptor_predictor
+        -> generate data but use adaptor methods
+
+# common evaluation file

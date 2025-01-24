@@ -128,14 +128,6 @@ def run_eval(ds_name, dataset, args, ds_config, use_covariates, save_dir):
 
     config = f"{ds_key}/{ds_freq}/{args.model_config}"
 
-    # set the Moirai hyperparameter according to each dataset, then create the predictor
-    model.hparams.context_length = ds_config["context_length"]
-    model.hparams.prediction_length = ds_config["prediction_length"] #dataset.prediction_length
-    model.hparams.target_dim = dataset.target_dim
-    if use_covariates:
-        model.hparams.past_feat_dynamic_real_dim = dataset.past_feat_dynamic_real_dim
-        model.hparams.feat_dynamic_real_dim = dataset.feat_dynamic_real_dim
-
     season_length = get_seasonality(dataset.freq)
 
     predictor = model.create_predictor(
@@ -223,40 +215,7 @@ if __name__ == "__main__":
         csv_file_path = os.path.join(output_dir, f"results.csv")
         create_result_logger(csv_file_path)
 
-    # load the model
-    if "moirai" in args.model_config:
-        model = MoiraiForecast(
-            module=MoiraiModule.from_pretrained(args.model_name),
-            prediction_length=1,
-            context_length=4000,
-            patch_size=args.patch_size,
-            num_samples=100,
-            target_dim=1,
-            feat_dynamic_real_dim=0,
-            past_feat_dynamic_real_dim=0,
-        )
-    # elif "extended" in args.model_config:
-    #     model=MoiraiAdaptorExtendedForecast(
-    #         module=MoiraiModule.from_pretrained(args.model_name),
-    #         prediction_length=1,
-    #         context_length=4000,
-    #         patch_size=args.patch_size,
-    #         num_samples=100,
-    #         target_dim=1,
-    #         feat_dynamic_real_dim=0,
-    #         past_feat_dynamic_real_dim=0
-    #     )
-    else:
-        model = MoiraiAdaptorForecast(
-            module=MoiraiModule.from_pretrained(args.model_name),
-            prediction_length=1,
-            context_length=4000,
-            patch_size=args.patch_size,
-            num_samples=100,
-            target_dim=1,
-            feat_dynamic_real_dim=0,
-            past_feat_dynamic_real_dim=0
-        )
+    # predictor or directly use model 
 
 
     # iterate over datasets
