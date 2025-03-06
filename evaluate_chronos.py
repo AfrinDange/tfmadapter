@@ -13,11 +13,8 @@ from gluonts.ev.metrics import (
     MASE,
     MAPE,
     SMAPE,
-    MSIS,
     RMSE,
     NRMSE,
-    ND,
-    MeanWeightedSumQuantileLoss
 )
 from gluonts.model import evaluate_model
 # from uni2ts.eval_util.evaluation import evaluate_model
@@ -49,6 +46,9 @@ parser.add_argument("--distance", type=int)
 parser.add_argument("--use_fixed_history", action="store_true")
 parser.add_argument("--use_positions", action="store_true")
 parser.add_argument("--pos_dims", type=int)
+parser.add_argument('--adaptor_method', nargs="+", type=str, required=True)
+parser.add_argument("--validation_metric", type=str, default="mse")
+parser.add_argument("--folds", type=int, required=True)
 
 metrics = [
     # MSE(forecast_type="mean"),
@@ -164,6 +164,7 @@ def run_eval(ds_name, dataset, args, ds_config, use_covariates, save_dir):
         predictor,
         test_data=dataset.custom_test_data(context_length=ds_config["context_length"], prediction_length=ds_config["prediction_length"], windows=ds_config["windows"], distance=ds_config["distance"]),
         metrics=metrics,
+        batch_size=args.batch_size,
         axis=None,
         mask_invalid_label=True,
         allow_nan_forecast=False,
@@ -178,17 +179,13 @@ def run_eval(ds_name, dataset, args, ds_config, use_covariates, save_dir):
                 [
                     config,
                     args.model_name,
-                    # res["MSE[mean]"][0],
                     res["MSE[0.5]"][0],
                     res["MAE[0.5]"][0],
                     res["MASE[0.5]"][0],
                     res["MAPE[0.5]"][0],
                     res["sMAPE[0.5]"][0],
-                    # res["MSIS"][0],
                     res["RMSE[mean]"][0],
                     res["NRMSE[mean]"][0],
-                    # res["ND[0.5]"][0],
-                    # res["mean_weighted_sum_quantile_loss"][0],
                     dataset_properties_map[ds_key]["domain"],
                     dataset_properties_map[ds_key]["num_variates"],
                     ds_config["context_length"],
@@ -205,10 +202,10 @@ def run_eval(ds_name, dataset, args, ds_config, use_covariates, save_dir):
                 ]
             )
 
-        print(f'{args.model_config}:\tMAE={res["MAE[0.5]"][0]}, MAPE={res["MAPE[0.5]"][0]}')
+        print(f'{args.model_config}:\tMAE={res["MAE[0.5]"][0]}, sMAPE={res["MAPE[0.5]"][0]}, RMSE={res["RMSE[mean]"][0]}')
         print(f"Results for {ds_name} have been written to {csv_file_path}")
     else:
-        print(f'{args.model_config}:\tMAE={res["MAE[0.5]"][0]}, MAPE={res["MAPE[0.5]"][0]}')
+        print(f'{args.model_config}:\tMAE={res["MAE[0.5]"][0]}, sMAPE={res["MAPE[0.5]"][0]}, RMSE={res["RMSE[mean]"][0]}')
 
 if __name__ == "__main__":
     args = parser.parse_args()
@@ -222,9 +219,14 @@ if __name__ == "__main__":
             for ds_name in all_datasets:
                 print(f"Overriding {config} for {ds_name} to {getattr(args, config, None)}")
                 ds_config[ds_name][config] = getattr(args, config, None)
-
-
+    
     use_covariates="with_cov" in args.model_config
+
+    if use_covariates: 
+        for ds_name in all_datasets:
+            ds_config[ds_name]["adaptor_method"] = args.adaptor_method
+            ds_config[ds_name]["validation_metric"] = args.validation_metric
+            ds_config[ds_name]["folds"] = args.folds
 
     print(all_datasets)
 

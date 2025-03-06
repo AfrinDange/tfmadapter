@@ -82,7 +82,7 @@ def mse(
 
     return torch.mean(torch.abs(y_true - y_pred)**2, dim=1) 
 
-class TwoStageAdaptor:
+class OneStageAdaptor:
     ''''
         
     '''
@@ -170,110 +170,6 @@ class TwoStageAdaptor:
             k: {} for k in self.validate_features
         }
         
-    def generate_training_data(self, regressor="gradient_boosted"):
-        '''
-            Use upto 3F to 5F predictions to train a lightweight model 
-            fm_predictions = model(true_values, past_k, positions)
-
-            ==> Gradient boosting, Bayesian ridge regression
-        '''
-        # input features --- true value, past_k, positions
-        batch_size, train_length, dim = self.y_true.shape
-
-        x_train = self.y_true 
-        x_test = self.get_features("all_history")
-
-        x_train = torch.cat([
-            x_train,
-            self.get_features("past_k")[:, :train_length],
-            self.get_features("positions")[:, :train_length]
-        ], dim=-1)
-
-        x_test = torch.cat([
-            x_test,
-            self.get_features("all_past_k")[:, :self.entire_context_length], # past_k
-            self.get_features("all_positions")[:, :self.entire_context_length]
-        ], dim=-1) 
-
-        x_test__ = torch.cat([
-            self.fm_predictions_test,
-            self.get_features("all_past_k")[:, self.entire_context_length:], # past_k
-            self.get_features("all_positions")[:, self.entire_context_length:]
-        ], dim=-1) 
-
-        # output feature --- FM prediction
-        y_train = self.fm_predictions_train
-
-        # normalize
-        # x_mean = x_train[..., :-self.num_pos].mean(dim=1, keepdim=True)
-        # x_std = x_train[..., :-self.num_pos].std(dim=1, keepdim=True) + self.eps
-
-        x_mean = torch.cat([
-            self.y_mean,
-            *([self.y_mean] * self.num_past_k)
-        ], dim=-1)
-        x_std = torch.cat([
-            self.y_std,
-            *([self.y_std] * self.num_past_k)
-        ], dim=-1)
-
-        x_train[..., :-self.num_pos] = (x_train[..., :-self.num_pos] - x_mean) / x_std
-        x_test[..., :-self.num_pos] = (x_test[..., :-self.num_pos] - x_mean) / x_std
-        x_test__[..., :-self.num_pos] = (x_test__[..., :-self.num_pos] - x_mean) / x_std
-
-        # y_mean = y_train.mean(dim=1, keepdim=True)
-        # y_std = y_train.std(dim=1, keepdim=True) + self.eps
-
-        y_mean = self.y_mean
-        y_std = self.y_std
-
-        y_train = (y_train - y_mean) / y_std
-
-        # fit a model, predict FM forecasts for all points in history
-        data = torch.empty(batch_size, self.entire_context_length, dim, device=x_train.device)
-        data__ = torch.empty(batch_size, self.prediction_length, dim, device=x_test__.device)
-        if regressor == "bayesian":
-            for i in tqdm(range(batch_size), desc="generate training data: ", leave=False):
-                data_model = BayesianRidge()
-                data_model.fit(x_train[i].cpu().numpy(), y_train[i].squeeze(-1).cpu().numpy())
-                data[i] = torch.from_numpy(data_model.predict(x_test[i].cpu().numpy())).to(x_test.device).unsqueeze(-1)
-
-                data__[i] = torch.from_numpy(data_model.predict(x_test__[i].cpu().numpy())).to(x_test.device).unsqueeze(-1)
-        elif regressor == "gradient_boosted":
-            def train_and_predict(i, x_train, y_train, x_test, data):
-                data_model = XGBRegressor(
-                        objective='reg:absoluteerror',
-                        tree_method="hist", 
-                        device="cuda"
-                        ) 
-                data_model.fit(x_train[i], y_train[i].squeeze(-1)) 
-                return i, torch.from_numpy(data_model.predict(x_test[i])).to(x_test.device).unsqueeze(-1) 
-        
-            results = Parallel(n_jobs=16)(delayed(train_and_predict)(i, x_train, y_train, x_test, data) for i in tqdm(range(batch_size)))
-            
-            for i, y_test in results:
-                data[i] = y_test
-        else:
-            raise ValueError(f"{regressor} regressor undefined for generating training data.")
-
-        data = data * y_std + y_mean
-        data__ = data__ * y_std + y_mean
-        
-        # create train, test data
-        # x_train --- fm forecasts (data)
-        # y_train --- true values (all_history)
-        # x_test --- real fm forecasts from actual horizon
-
-        self.x_train = data
-        self.y_train = self.get_features("all_history")
-        self.x_test =  data__ 
-        # self.x_test = self.fm_predictions_test
-
-        assert self.x_train.shape == (batch_size, self.entire_context_length, dim), f"x_train shape is {self.x_train.shape}, expected {(batch_size, self.entire_context_length, dim)}"
-        assert self.y_train.shape == (batch_size, self.entire_context_length, dim), f"y_train shape is {self.y_train.shape}, expected {(batch_size, self.entire_context_length, dim)}"
-
-        return self.x_train, self.y_train, self.x_test
-
     def _cross_validate(
         self
     ) -> Float[torch.Tensor, "batch num_test_examples patch_size"]:
@@ -375,7 +271,6 @@ class TwoStageAdaptor:
             if any([f"adaptor_{str(id)}" in best_method for id in self.gp_id]):
                 # find configuration
                 best_adaptor, best_feature, threshold = re.match(r"adaptor_(\d+)_feature_(\d+)_threshold_(\d+)", best_method).groups()
-                print(example, best_adaptor, best_feature, threshold)
                 assert self.validate_models[int(best_adaptor)]["model"] == "gaussian_process"
 
                 adaptor_params = self.validate_models[int(best_adaptor)]
@@ -444,36 +339,40 @@ class TwoStageAdaptor:
         '''
             example wise addition of feature_names and normalization
         '''
+        train_length = x_train.shape[1]
         features = [torch.cat([x_train[example], x_test[example]], dim=0)]
-        if "all_covariates" in feature_names:
-            features.append(self.get_features("all_covariates")[example])
-        if "all_past_k" in feature_names:
-            features.append(self.get_features("all_past_k")[example])
-        if "all_positions" in feature_names:
-            features.append(self.get_features("all_positions")[example])
+        ux_mean = [self.y_mean[example]]
+        ux_std = [self.y_std[example]]
+        if "covariates" in feature_names:
+            features.append(self.get_features("covariates")[example])
+            ux_mean.append(self.cov_mean[example])
+            ux_std.append(self.cov_std[example])
+        if "past_k" in feature_names:
+            features.append(self.get_features("past_k")[example])
+            ux_mean.extend([self.y_mean[example]] * self.num_past_k)
+            ux_std.extend([self.y_std[example]] * self.num_past_k)
+        if "positions" in feature_names:
+            features.append(self.get_features("positions")[example])
         
         ux_ = torch.cat(features, dim=-1).unsqueeze(0)
-        ux_train = ux_[:, :self.entire_context_length]
-        ux_test = ux_[:, self.entire_context_length:]
+        ux_train = ux_[:, :train_length]
+        ux_test = ux_[:, train_length:]
 
-        if "all_positions" in features:
-            ux_mean = ux_train[..., :-self.num_pos].mean(dim=1, keepdim=True)
-            ux_std = ux_train[..., :-self.num_pos].std(dim=1, keepdim=True) + self.eps
+        ux_mean = torch.cat(ux_mean, dim=-1)
+        ux_std = torch.cat(ux_std, dim=-1)
+
+        if "positions" in feature_names:
             ux_train[..., :-self.num_pos] = (ux_train[..., :-self.num_pos] - ux_mean) / ux_std
             ux_test[..., :-self.num_pos] = (ux_test[..., :-self.num_pos] - ux_mean) / ux_std
         else:
-            ux_mean = ux_train.mean(dim=1, keepdim=True)
-            ux_std = ux_train.std(dim=1, keepdim=True)
             ux_train = (ux_train - ux_mean) / ux_std
             ux_test = (ux_test - ux_mean) / ux_std
         
         uy_train = y_train[example:example+1]
-        uy_mean = uy_train.mean(dim=1, keepdim=True)
-        uy_std = uy_train.std(dim=1, keepdim=True) + self.eps
+    
+        uy_train = (uy_train - self.y_mean[example]) / self.y_std[example]
 
-        uy_train = (uy_train - uy_mean) / uy_std 
-
-        return ux_train, ux_test, ux_mean, ux_std, uy_train, uy_mean, uy_std
+        return ux_train, ux_test, ux_mean, ux_std, uy_train, self.y_mean[example], self.y_std[example]
     
     def normalize(
         self,
@@ -482,21 +381,27 @@ class TwoStageAdaptor:
         y_train,
         features
     ):
-        if "all_positions" in features:
-            x_mean = x_train[..., :-self.num_pos].mean(dim=1, keepdim=True)
-            x_std = x_train[..., :-self.num_pos].std(dim=1, keepdim=True) + self.eps
-
+        x_mean = [self.y_mean]
+        x_std = [self.y_std]
+        for feature in features:
+            if "covariates" in feature:
+                x_mean.append(self.cov_mean)
+                x_std.append(self.cov_std)
+            elif "past_k" in feature:
+                x_mean.extend([self.y_mean] * self.num_past_k)
+                x_std.extend([self.y_std] * self.num_past_k)
+        x_mean = torch.cat(x_mean, dim=-1)
+        x_std = torch.cat(x_std, dim=-1)
+        
+        if "positions" in features:
             x_train[..., :-self.num_pos] = (x_train[..., :-self.num_pos] - x_mean) / x_std
             x_test[..., :-self.num_pos] = (x_test[..., :-self.num_pos] - x_mean) / x_std
         else:
-            x_mean = x_train.mean(dim=1, keepdim=True)
-            x_std = x_train.std(dim=1, keepdim=True) + self.eps
-
             x_train = (x_train - x_mean) / x_std
             x_test = (x_test - x_mean) / x_std
 
-        y_mean = y_train.mean(dim=1, keepdim=True)
-        y_std = y_train.std(dim=1, keepdim=True) + self.eps
+        y_mean = self.y_mean
+        y_std = self.y_std
 
         y_train = (y_train - y_mean) / y_std
 
@@ -556,7 +461,6 @@ class TwoStageAdaptor:
                             eval_metrics[f"adaptor_{a}_feature_{f}_threshold_{i}"] = []
 
                         error = self.validation_metric(y_val, y_val_pred[i])
-                        print(i, threshold, error)
                         eval_metrics[f"adaptor_{a}_feature_{f}_threshold_{i}"].append(error)
                 else:
                     if f"adaptor_{a}_feature_{f}" not in eval_metrics:
@@ -1213,13 +1117,7 @@ class TwoStageAdaptor:
             print("Warning: K_reg is not positive definite! Increasing jitter...")
             jitter = 1e-4
             K_reg += jitter * torch.eye(K.shape[1], device=K.device).unsqueeze(0)
-            try:
-                L = torch.linalg.cholesky(K_reg) 
-            except RuntimeError:
-                print("Error: K_reg is still not invertible! Returning large values.")
-                y_mean = torch.full((x_train.shape[0], self.prediction_length, 1), 1e6, device=K.device)
-                y_cov = torch.full((x_train.shape[0], self.prediction_length, self.prediction_length), 1e6, device=K.device)
-                return y_mean, y_cov
+            L = torch.linalg.cholesky(K_reg)
 
         alpha = torch.cholesky_solve(y_train, K_inv)
 
