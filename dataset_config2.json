@@ -179,6 +179,36 @@
         "use_positions": true,
         "pos_dims": 4
     },
+    "drift": {
+        "name": "drift",
+        "context_length": 448,
+        "smaller_context": 364,
+        "smallest_history": 112,
+        "rolling_window_size": 28, 
+        "prediction_length": 28,
+        "windows": 10,
+        "distance": 28,
+        "num_past_k": 4,
+        "to_univariate": false,
+        "use_fixed_history": false,
+        "use_positions": true,
+        "pos_dims": 4
+    },
+    "chlorine": {
+        "name": "chlorine",
+        "context_length": 288,
+        "smaller_context": 216,
+        "smallest_history": 72,
+        "rolling_window_size": 24, 
+        "prediction_length": 24,
+        "windows": 10,
+        "distance": 24,
+        "num_past_k": 4,
+        "to_univariate": false,
+        "use_fixed_history": false,
+        "use_positions": true,
+        "pos_dims": 4
+    },
     "covid-national": {
         "context_length": 112,
         "smaller_context": 84,

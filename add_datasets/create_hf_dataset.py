@@ -172,35 +172,41 @@ def load_covid_datasets():
     hfdataset.save_to_disk(str(save_path / dataset))
 
 def load_bike_sharing_datasets():
+    '''
+        TTM uses the following covariates: weathersit, season, holiday, and temperature
+        https://arxiv.org/pdf/2401.03955 pg 11
+    '''
     dataset="bike_sharing"
     data=pd.read_csv(str(storage_path / (dataset+".csv")))
 
     target_col="cnt"
-    cov_cols=['season', 'mnth', 'hr', 'holiday', 'weekday',
-       'workingday', 'weathersit', 'temp', 'atemp', 'hum', 'windspeed']
+    cov_cols=['temp']
+    cat_cov_cols = ['season', 'holiday', 'weathersit']
     item_id="bike_sharing"
 
-    one_hot_cols = ["season", "weekday", "weathersit"] 
-    encoder = OneHotEncoder(sparse_output=False, drop="first")  
-    one_hot_encoded = encoder.fit_transform(data[one_hot_cols])
-    one_hot_df = pd.DataFrame(one_hot_encoded, columns=encoder.get_feature_names_out(one_hot_cols))
+    # one_hot_cols = ["season", "weekday", "weathersit"] 
+    # encoder = OneHotEncoder(sparse_output=False, drop="first")  
+    # one_hot_encoded = encoder.fit_transform(data[one_hot_cols])
+    # one_hot_df = pd.DataFrame(one_hot_encoded, columns=encoder.get_feature_names_out(one_hot_cols))
 
-    data = data.drop(columns=one_hot_cols).reset_index(drop=True)
-    data = pd.concat([data, one_hot_df], axis=1)
+    # data = data.drop(columns=one_hot_cols).reset_index(drop=True)
+    # data = pd.concat([data, one_hot_df], axis=1)
 
-    cov_cols = [col for col in cov_cols if col not in one_hot_cols]
-    cov_cols.extend(one_hot_df.columns)
+    # cov_cols = [col for col in cov_cols if col not in one_hot_cols]
+    # cov_cols.extend(one_hot_df.columns)
 
     freq="h"
     start=pd.to_datetime(data["dteday"][0])
     target=data[target_col].to_numpy()
     feat_dynamic_real=data[cov_cols].to_numpy().T
+    cat_feat_dynamic_real=data[cat_cov_cols].to_numpy().T
     hfdataset = Dataset.from_dict({
         "item_id": [item_id],
         "start": [start],
         "freq": [freq],
         "target": [target],
         "feat_dynamic_real": [feat_dynamic_real],
+        "cat_feat_dynamic_real": [cat_feat_dynamic_real],
     }, info=DatasetInfo(
             description="",
             citation='Jesus Lago, Grzegorz Marcjasz, Bart De Schutter, Rafał Weron. "Forecasting day-ahead electricity prices: A review of state-of-the-art algorithms, best practices and an open-access benchmark". Applied Energy 2021; 293:116983. https://doi.org/10.1016/j.apenergy.2021.116983',

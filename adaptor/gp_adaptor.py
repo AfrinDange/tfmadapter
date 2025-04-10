@@ -6,19 +6,14 @@ import re
 import torch
 import warnings
 
-
 import optuna
 from optuna.samplers import TPESampler
 
 from collections import defaultdict
-from cuml import KernelRidge
 from dataclasses import dataclass
 from jaxtyping import Float, Int
 from joblib import Parallel, delayed
-from sklearn.ensemble import GradientBoostingRegressor
 from sklearn.linear_model import BayesianRidge
-from skopt import gp_minimize
-from skopt.space import Real
 from tqdm import tqdm
 from typing import Any, Dict, List, Optional, Tuple
 from xgboost import XGBRegressor
@@ -129,18 +124,30 @@ class TwoStageGPAdaptor:
         # positions 
         stage_one_features["all_positions"] = stage_one_features["all_positions"].unsqueeze(0).repeat(self.y_true.shape[0], 1, 1)
 
-        self.validate_features = {id:{"features": features} for id, features in enumerate(self.ds_config.features_for_selection)}
+        # self.validate_features = {id:{"features": features} for id, features in enumerate(self.ds_config.features_for_selection)}
 
         self.gp_opt_params = defaultdict(lambda: defaultdict(lambda: defaultdict(list))) 
+        self.feature_set = []
+        self.ts_kernels = []
+        self.combine_covariates = []
         # self.optimized_weights = defaultdict(list)
 
 
         ################# 
-
+        self.pos_dims = 16
         # normalize position ids
+        positions = torch.cat([self.history_features["position_ids"], self.future_features["position_ids"]], dim=1)
+        positions = positions.repeat(1, 1, self.pos_dims)
+        dim_positions = torch.pow(torch.tensor([1e4]), 2 * (torch.arange(self.pos_dims) // 2)/self.pos_dims).reshape(1, 1, -1).to("cuda")
 
-        self.history_features["position_ids"] = self.history_features["position_ids"] / self.ds_config.seasonality
-        self.future_features["position_ids"] = self.future_features["position_ids"] / self.ds_config.seasonality
+        positions[:, :, ::2] = torch.sin(positions[:, :, ::2] / dim_positions[..., ::2])
+        positions[:, :, 1::2] = torch.cos(positions[:, :, 1::2] / dim_positions[..., 1::2])
+
+        self.history_features["position_ids"] = positions[:, :-self.prediction_length]
+        self.future_features["position_ids"] = positions[:, -self.prediction_length:]
+        
+        # self.history_features["position_ids"] = self.history_features["position_ids"] / self.ds_config.seasonality
+        # self.future_features["position_ids"] = self.future_features["position_ids"] / self.ds_config.seasonality
 
 
         # self.history_features["covariates"] = torch.cat([
@@ -154,9 +161,9 @@ class TwoStageGPAdaptor:
         # ], dim=1).unfold(dimension=1, step=1, size=self.num_past_k+1).flatten(start_dim=2)
 
 
-        for feature in self.history_features:
-            print(feature, self.history_features[feature].shape if self.history_features[feature] is not None else None)
-            print(feature, self.future_features[feature].shape if self.history_features[feature] is not None else None)
+        # for feature in self.history_features:
+        #     print(feature, self.history_features[feature].shape if self.history_features[feature] is not None else None)
+        #     print(feature, self.future_features[feature].shape if self.history_features[feature] is not None else None)
             
     def generate_training_data(
         self,
@@ -276,10 +283,10 @@ class TwoStageGPAdaptor:
             error_per_fold.append(errors)
 
         error = torch.cat([torch.cat([err.unsqueeze(0) for err in error], dim=0).unsqueeze(0) for error in error_per_fold], dim=0)
-        print(error.shape)
+        # print(error.shape)
         self.threshold = error.mean(dim=0).argmin(dim=0)
         
-        print(self.threshold.shape, self.threshold)
+        # print(self.threshold.shape, self.threshold)
 
         self.gp_opt_params = {
             feature: {
@@ -306,7 +313,11 @@ class TwoStageGPAdaptor:
             kwargs = {
                 feature: {
                     kernel: {param: val[example] for param, val in params.items()} for kernel, params in kernels.items()
-                } for feature, kernels in self.gp_opt_params.items()
+                } for feature, kernels in self.gp_opt_params.items() if feature != "position_kwargs" or (feature == "position_kwargs" and "positions" in self.feature_set[example])
+            }
+            
+            kwargs['ts_kwargs'] = {
+                kernel: {param: val[example] for param, val in params.items()} for kernel, params in self.gp_opt_params["ts_kwargs"].items() if kernel in self.ts_kernels[example]
             }
 
             # weights = {
@@ -319,10 +330,10 @@ class TwoStageGPAdaptor:
             #     **data_input,
             #     **{**kwargs, **weights, "threshold": [] if threshold == 0 else [[2.0, 2.5, 3.0][threshold-1]]}
             # )[-1]
-
+            
             ts_test = self.eval_gaussian_process_estimator(
                 **data_input,
-                **{**kwargs, "threshold": [] if threshold == 0 else [[2.0, 2.5, 3.0][threshold-1]]}
+                **{**kwargs, "threshold": [] if threshold == 0 else [[2.0, 2.5, 3.0][threshold-1]], "feature_set": self.feature_set[example], "ts_kernels": self.ts_kernels[example], "combine_covariates": self.combine_covariates[example]}
             )[-1]
 
             batch_ts_test[example] = ts_test
@@ -439,16 +450,21 @@ class TwoStageGPAdaptor:
         # optimized_params, optimized_weights = self.optimize_hyperparams(
         #     **{key: val.clone() if val is not None else None for key, val in data_inputs.items()}
         # )
-        optimized_params, feature_set = self.optimize_hyperparams(
+        batch_size = self.ts_pred_history.shape[0]
+        optimized_params, feature_set, ts_kernels, combine_covariates = self.optimize_hyperparams(
             **{key: val.clone() if val is not None else None for key, val in data_inputs.items()}
         )
-
+  
         for feature in optimized_params:
             for kernel in optimized_params[feature]:
                 for param, value in optimized_params[feature][kernel].items():
                     self.gp_opt_params[feature][kernel][param].append(value)
 
-        self.feature_set.append(feature_set)
+        self.feature_set.extend(feature_set)
+        self.ts_kernels.extend(ts_kernels)
+        self.combine_covariates.extend(combine_covariates)
+        
+        # print(self.gp_opt_params)
 
         # for weight, val in optimized_weights.items():
         #     self.optimized_weights[weight].append(val)
@@ -457,18 +473,30 @@ class TwoStageGPAdaptor:
         #     **{key: val.clone() if val is not None else None for key, val in data_inputs.items()},
         #     **{**optimized_params, **optimized_weights, "threshold": [2.0, 2.5, 3.0]}                   
         # )
-        ts_val = self.eval_gaussian_process_estimator(
-            **{key: val.clone() if val is not None else None for key, val in data_inputs.items()},
-            **{**optimized_params, "threshold": [2.0, 2.5, 3.0]}                   
-        )
+        batch_errors=[]
+        for example in tqdm(range(batch_size), desc="Threshold validation: ", leave=False):
+            data_input = {key: val[example:example+1] if val is not None else None for key, val in data_inputs.items()}
+            kwargs = {
+                feature: {
+                    kernel: {param: val[example] for param, val in params.items()} for kernel, params in kernels.items()
+                } for feature, kernels in optimized_params.items() if feature != "position_kwargs" or (feature == "position_kwargs" and "positions" in feature_set[example])
+            }
+            ts_val = self.eval_gaussian_process_estimator(
+                **data_input,
+                **{**kwargs, "threshold": [2.0, 2.5, 3.0], "feature_set": feature_set[example], "ts_kernels": ts_kernels[example], "combine_covariates": combine_covariates[example]}                   
+            )
 
-        errors = []        
-        for i, threshold in enumerate([None, 2.0, 2.5, 3.0]):
-            error = self.validation_metric(data_inputs["ts_true_future"], ts_val[i])
-            errors.append(error)
+            errors = []        
+            for i, threshold in enumerate([None, 2.0, 2.5, 3.0]):
+                error = self.validation_metric(data_input["ts_true_future"], ts_val[i])
+                errors.append(error)
+            batch_errors.append(torch.tensor(errors).unsqueeze(0))
+        
+        batch_errors = torch.cat(batch_errors, dim=0).to(self.ts_pred_history.device)
+        assert  batch_errors.shape == (batch_size, 4), f"batch_errors shape is {batch_errors.shape}, expected {(batch_size, 4)}"
+        batch_errors = [batch_errors[:, i] for i in range(4)]
 
-        return errors
-
+        return batch_errors
 
     def optimize_hyperparams(
         self,
@@ -481,6 +509,11 @@ class TwoStageGPAdaptor:
                 "rbf": lambda trial: {
                     "width": trial.suggest_float(name="ts_kwargs.rbf.width", low=0.1, high=2, log=True),
                     "variance": trial.suggest_float(name="ts_kwargs.rbf.variance", low=0.1, high=4, log=True),
+                },
+                "matern": lambda trial: {
+                    "width": trial.suggest_float(name="ts_kwargs.matern.width", low=0.1, high=2, log=True),
+                    "variance": trial.suggest_float(name="ts_kwargs.matern.variance", low=0.1, high=4, log=True),
+                    "nu": trial.suggest_categorical("ts_kwargs.matern.nu", [1.5, 2.5]),
                 },
                 "linear": lambda trial: {
                     "variance": trial.suggest_float(name="ts_kwargs.linear.variance", low=0.1, high=2, log=True),
@@ -495,13 +528,20 @@ class TwoStageGPAdaptor:
                     "variance": trial.suggest_float(name="covariate_kwargs.linear.variance", low=0.1, high=2, log=True),
                 },
             },
-            "position_kwargs": {
-                "periodic": lambda trial: {
-                    "period": trial.suggest_float(name="position_kwargs.periodic.period", low=2, high=6, log=True),
-                    "width": trial.suggest_float(name="position_kwargs.periodic.width", low=0.1, high=2, log=True),
-                    "variance": trial.suggest_float(name="position_kwargs.periodic.variance", low=0.1, high=2, log=True),
-                }
-            },
+            # "position_kwargs": {
+            #     "periodic": lambda trial: {
+            #         "period": trial.suggest_float(name="position_kwargs.periodic.period", low=2, high=6, log=True),
+            #         "width": trial.suggest_float(name="position_kwargs.periodic.width", low=0.1, high=2, log=True),
+            #         "variance": trial.suggest_float(name="position_kwargs.periodic.variance", low=0.1, high=2, log=True),
+            #     }
+            # },
+            # "position_kwargs": {
+            #     "periodic": lambda trial: {
+            #         "period": trial.suggest_float(name="position_kwargs.periodic.period", low=0.8, high=1.2, log=True),
+            #         "width": trial.suggest_float(name="position_kwargs.periodic.width", low=0.3, high=1, log=True),
+            #         "variance": trial.suggest_float(name="position_kwargs.periodic.variance", low=0.01, high=0.3, log=True),
+            #     }
+            # },
         }
 
         # kernel_weights = lambda trial: {
@@ -533,18 +573,47 @@ class TwoStageGPAdaptor:
         ):
             '''
             '''
-            hyperparams = {
-                feature: {
-                    kernel: sampler(trial) for kernel, sampler in kernels.items()
-                } for feature, kernels in kernel_params.items()
-            }
-
             feature_choice = trial.suggest_categorical("feature_set", [
+                "covariates",
                 "past_k covariates",
+                "positions covariates",
                 "past_k positions covariates",
-                "positions covariates"
             ])
-
+            
+            ts_kernels = trial.suggest_categorical("ts_kernels", [
+                # "rbf+linear",
+                # "matern+linear",
+                "matern",
+                "rbf"
+            ])
+            
+            combine_covariates = trial.suggest_categorical("combine_covariates", [
+                "combine",
+                "separate"
+            ])
+            
+                                                    
+            # hyperparams = {
+            #     feature: {
+            #         kernel: sampler(trial) for kernel, sampler in kernels.items()
+            #     } for feature, kernels in kernel_params.items() if feature != "ts_kwargs" and (feature != "position_kwargs" or (feature == "position_kwargs" and "positions" in feature_choice))
+            # }
+            
+            hyperparams = {}
+            
+            hyperparams["ts_kwargs"] = {
+                kernel: sampler(trial) for kernel, sampler in kernel_params["ts_kwargs"].items() if kernel in ts_kernels
+            }
+            
+            if combine_covariates == "separate":
+                hyperparams["covariate_kwargs"] = {
+                    kernel: sampler(trial) for kernel, sampler in kernel_params["covariate_kwargs"].items()
+                }
+                if self.has_cat_covariates:
+                    hyperparams["cat_covariate_kwargs"] = {
+                        kernel: sampler(trial) for kernel, sampler in kernel_params["cat_covariate_kwargs"].items()
+                    }
+  
             # weights = kernel_weights(trial)
 
             # raw_weights = torch.tensor([weights["ts_weight"], weights["covariate_weight"], weights["position_weight"]], dtype=torch.float32)
@@ -561,7 +630,7 @@ class TwoStageGPAdaptor:
 
 
             # kwargs = { **hyperparams, **weights, "threshold": []}
-            kwargs = { **hyperparams, "feature_set": feature_choice, "threshold": []}
+            kwargs = { **hyperparams, "feature_set": feature_choice, "ts_kernels": ts_kernels, "threshold": [], "combine_covariates": combine_covariates}
 
             data_input = {key: val[i:i+1] if val is not None else None for key, val in data_inputs.items()}
 
@@ -574,12 +643,12 @@ class TwoStageGPAdaptor:
             return error.item()
         
         def optimize_per_sample(i):
-            study = optuna.create_study(sampler=TPESampler())
+            study = optuna.create_study(sampler=TPESampler(n_startup_trials=16), direction="minimize")
             study.optimize(lambda trial: objective(
                 trial,
                 i,
                 data_inputs
-            ), n_trials=512)
+            ), n_trials=64)
             
             return study.best_params
         
@@ -597,13 +666,36 @@ class TwoStageGPAdaptor:
         # optimized_weights = defaultdict(list)
         
         feature_set = []
+        ts_kernels = []
+        combine_covariates = []
 
         for res in results:
+            if "position_kwargs.periodic.period" not in res:
+                res["position_kwargs.periodic.period"] = -1.0
+                res["position_kwargs.periodic.width"] = -1.0
+                res["position_kwargs.periodic.variance"] = -1.0
+            if "ts_kwargs.matern.width" not in res: # rbf is chosen
+                res["ts_kwargs.matern.width"] = -1.0
+                res["ts_kwargs.matern.variance"] = -1.0
+                res["ts_kwargs.matern.nu"] = -1.0
+            if "ts_kwargs.rbf.width" not in res: # matern is chosen
+                res["ts_kwargs.rbf.width"] = -1.0
+                res["ts_kwargs.rbf.variance"] = -1.0
+            if "ts_kwargs.linear.variance" not in res: # matern is chosen
+                res["ts_kwargs.linear.variance"] = -1.0                   
+            if "covariate_kwargs.rbf.width" not in res:
+                res["covariate_kwargs.rbf.width"] = -1.0
+                res["covariate_kwargs.rbf.variance"] = -1.0
+                res["covariate_kwargs.linear.variance"] = -1.0
             for key, val in res.items():
                 # if "weight" in key:
                 #     optimized_weights[key].append(val)
                 if key == "feature_set":
                     feature_set.append(val)
+                elif key == "ts_kernels":
+                    ts_kernels.append(val)
+                elif key == "combine_covariates":
+                    combine_covariates.append(val)
                 else:
                     feature, kernel, param = key.split(".")
                     optimized_params[feature][kernel][param].append(val)
@@ -622,7 +714,221 @@ class TwoStageGPAdaptor:
         # }
 
         # return optimized_params, optimized_weights
-        return optimized_params, feature_set
+        return optimized_params, feature_set, ts_kernels, combine_covariates
+
+    def optimize_hyperparams_with_feature_selection(
+        self,
+        **data_inputs
+    ):
+        kernel_params = {
+            "ts_kwargs": {
+                "rbf": lambda trial: {
+                    "width": trial.suggest_float(name="ts_kwargs.rbf.width", low=0.1, high=2, log=True),
+                    "variance": trial.suggest_float(name="ts_kwargs.rbf.variance", low=0.1, high=4, log=True),
+                },
+                "matern": lambda trial: {
+                    "width": trial.suggest_float(name="ts_kwargs.matern.width", low=0.1, high=2, log=True),
+                    "variance": trial.suggest_float(name="ts_kwargs.matern.variance", low=0.1, high=4, log=True),
+                    "nu": trial.suggest_categorical("ts_kwargs.matern.nu", [1.5, 2.5]),
+                },
+                "linear": lambda trial: {
+                    "variance": trial.suggest_float(name="ts_kwargs.linear.variance", low=0.1, high=2, log=True),
+                },
+            }, 
+            # "covariate_kwargs": {
+            #     "rbf": lambda trial: {
+            #         "width": trial.suggest_float(name="covariate_kwargs.rbf.width", low=0.1, high=2, log=True),
+            #         "variance": trial.suggest_float(name="covariate_kwargs.rbf.variance", low=0.1, high=4, log=True),
+            #     },
+            #     "linear": lambda trial: {
+            #         "variance": trial.suggest_float(name="covariate_kwargs.linear.variance", low=0.1, high=2, log=True),
+            #     },
+            # },
+            # "position_kwargs": {
+            #     "periodic": lambda trial: {
+            #         "period": trial.suggest_float(name="position_kwargs.periodic.period", low=0.8, high=1.2, log=True),
+            #         "width": trial.suggest_float(name="position_kwargs.periodic.width", low=0.3, high=1, log=True),
+            #         "variance": trial.suggest_float(name="position_kwargs.periodic.variance", low=0.01, high=0.3, log=True),
+            #     }
+            # },
+        }
+
+        if self.has_cat_covariates:
+            kernel_params["cat_covariate_kwargs"] = {
+                "rbf": lambda trial: {
+                    "width": trial.suggest_float(name="cat_covariate_kwargs.rbf.width", low=0.1, high=2, log=True),
+                    "variance": trial.suggest_float(name="cat_covariate_kwargs.rbf.variance", low=0.1, high=4, log=True),
+                }
+            }
+            
+        def objective_for_feature_selection(
+            trial,
+            i,
+            data_inputs,
+        ):
+            '''
+            '''            
+            feature_choice = trial.suggest_categorical("feature_set", [
+                "covariates",
+                "past_k covariates",
+                "positions covariates",
+                "past_k positions covariates",
+            ])
+            
+            hyperparams = {
+                "ts_kwargs": {
+                    "rbf": {
+                        "width": 0.5,       
+                        "variance": 1.0,    
+                    },
+                    "linear": {
+                        "variance": 1.0,
+                    },
+                },
+                "covariate_kwargs": {
+                    "rbf": {
+                        "width": 0.5,
+                        "variance": 1.0,
+                    },
+                    "linear": {
+                        "variance": 1.0,
+                    },
+                }
+            }
+            
+            # if "positions" in feature_choice:
+            #     hyperparams["position_kwargs"] = {
+            #         "periodic": {
+            #             "period": 1.0,    
+            #             "width": 0.5,
+            #             "variance": 0.05,
+            #         }
+            #     }
+
+            kwargs = { **hyperparams, "feature_set": feature_choice, "ts_kernels": "rbf", "threshold": []}
+
+            data_input = {key: val[i:i+1] if val is not None else None for key, val in data_inputs.items()}
+
+            y_pred = self.eval_gaussian_process_estimator(
+                **data_input,
+                **kwargs
+            )[0]
+
+            error = self.validation_metric(data_input["ts_true_future"], y_pred).mean()
+            return error.item()
+
+        def objective(
+            trial,
+            i,
+            data_inputs,
+            feature_choice,
+        ):
+            '''
+            '''            
+            ts_kernels = trial.suggest_categorical("ts_kernels", [
+                # "rbf+linear",
+                # "matern+linear",
+                "matern",
+                "rbf"
+            ])
+                                                  
+            hyperparams = {
+                feature: {
+                    kernel: sampler(trial) for kernel, sampler in kernels.items()
+                } for feature, kernels in kernel_params.items() if feature != "ts_kwargs" and (feature != "position_kwargs" or (feature == "position_kwargs" and "positions" in feature_choice))
+            }
+            
+            hyperparams["ts_kwargs"] = {
+                kernel: sampler(trial) for kernel, sampler in kernel_params["ts_kwargs"].items() if kernel in ts_kernels
+            }
+  
+            kwargs = { **hyperparams, "feature_set": feature_choice, "ts_kernels": ts_kernels, "threshold": []}
+
+            data_input = {key: val[i:i+1] if val is not None else None for key, val in data_inputs.items()}
+
+            y_pred = self.eval_gaussian_process_estimator(
+                **data_input,
+                **kwargs
+            )[0]
+
+            error = self.validation_metric(data_input["ts_true_future"], y_pred).mean()
+            return error.item()
+        
+        def optimize_per_sample(i):
+            study1 = optuna.create_study(sampler=TPESampler(n_startup_trials=16), direction="minimize")
+            study1.optimize(lambda trial: objective_for_feature_selection(
+                trial,
+                i,
+                data_inputs
+            ), n_trials=32)
+            
+            study2 = optuna.create_study(sampler=TPESampler(n_startup_trials=16), direction="minimize")
+            study2.optimize(lambda trial: objective(
+                trial,
+                i,
+                data_inputs,
+                feature_choice=study1.best_params["feature_set"]
+            ), n_trials=32)
+            
+            return {**study1.best_params, **study2.best_params}
+        
+        results = Parallel(n_jobs=16)(
+            delayed(optimize_per_sample)(i) for i in tqdm(range(data_inputs["ts_pred_history"].shape[0]), desc=f"Optimize GP Kernel")
+        )
+
+        # results=[]
+
+        # for i in tqdm(range(data_inputs["ts_pred_history"].shape[0]), desc=f"Optimize GP Kernel"):
+        #     result = optimize_per_sample(i)
+        #     results.append(result)
+
+        optimized_params = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
+        # optimized_weights = defaultdict(list)
+        
+        feature_set = []
+        ts_kernels = []
+
+        for res in results:
+            if "position_kwargs.periodic.period" not in res:
+                res["position_kwargs.periodic.period"] = -1.0
+                res["position_kwargs.periodic.width"] = -1.0
+                res["position_kwargs.periodic.variance"] = -1.0
+            if "ts_kwargs.matern.width" not in res: # rbf is chosen
+                res["ts_kwargs.matern.width"] = -1.0
+                res["ts_kwargs.matern.variance"] = -1.0
+                res["ts_kwargs.matern.nu"] = -1.0
+            if "ts_kwargs.rbf.width" not in res: # matern is chosen
+                res["ts_kwargs.rbf.width"] = -1.0
+                res["ts_kwargs.rbf.variance"] = -1.0
+            if "ts_kwargs.linear.variance" not in res: # matern is chosen
+                res["ts_kwargs.linear.variance"] = -1.0                   
+                
+            for key, val in res.items():
+                # if "weight" in key:
+                #     optimized_weights[key].append(val)
+                if key == "feature_set":
+                    feature_set.append(val)
+                elif key == "ts_kernels":
+                    ts_kernels.append(val)
+                else:
+                    feature, kernel, param = key.split(".")
+                    optimized_params[feature][kernel][param].append(val)
+
+        optimized_params = {
+            feature: {
+                kernel: {
+                    param: torch.tensor(values, device=data_inputs["ts_pred_history"].device)
+                    for param, values in params.items()
+                } for kernel, params in kernels.items()
+            } for feature, kernels in optimized_params.items()
+        }
+
+        # optimized_weights = {
+        #     key: torch.tensor(val, device=data_inputs["ts_pred_history"].device) for key, val in optimized_weights.items()
+        # }
+
+        # return optimized_params, optimized_weights
+        return optimized_params, feature_set, ts_kernels
     
     def eval_gaussian_process_estimator(
         self,
@@ -791,6 +1097,18 @@ class TwoStageGPAdaptor:
 
         return variance * torch.matmul(x_1, x_2.transpose(1, 2))
 
+    def kernel(self, type):
+        if type == "rbf":
+            return self.rbf_kernel
+        elif type == "matern":
+            return self.matern_kernel
+        elif type == "periodic":
+            return self.periodic_kernel
+        elif type == "linear":
+            return self.linear_kernel
+        else:
+            raise ValueError(f"Kernel {type} not supported.")
+
     def gaussian_process_estimator(
         self,
         ts_pred_history,
@@ -814,6 +1132,7 @@ class TwoStageGPAdaptor:
             positions
 
         '''
+        # print(kwargs)
         # ts_weight = kwargs.get("ts_weight")
         # covariate_weight = kwargs.get("covariate_weight")
         # position_weight = kwargs.get("position_weight")
@@ -824,6 +1143,11 @@ class TwoStageGPAdaptor:
         #     ts_weight = ts_weight.reshape(-1, 1, 1)
         #     covariate_weight = covariate_weight.reshape(-1, 1, 1)
         #     position_weight = position_weight.reshape(-1, 1, 1)
+        
+        assert type(kwargs.get("feature_set")) == str and type(kwargs.get("ts_kernels")) == str, f"type of feature_set and ts_kernels should be str, got {type(kwargs.get('feature_set'))} and {type(kwargs.get('ts_kernels'))}"
+
+        feature_choice = kwargs.get("feature_set") # string of space separated features
+        ts_kernels = kwargs.get("ts_kernels").split("+") # string with kernels separated by "+"
 
         bsz = ts_pred_history.shape[0]
         # ts kernel params
@@ -831,30 +1155,46 @@ class TwoStageGPAdaptor:
         # covariate kernel params
         covariate_kwargs = kwargs.get("covariate_kwargs")
         cat_covariate_kwargs = kwargs.get("cat_covariate_kwargs")
-        # position kernel params
-        position_kwargs = kwargs.get("position_kwargs")
+        # # position kernel params
+        # if "positions" in feature_choice:
+        #     position_kwargs = kwargs.get("position_kwargs")
+        combine_covariates = kwargs.get("combine_covariates")
 
-        ts_pred_history = torch.cat([ts_pred_history, ts_past_k_history], dim=-1)
-        ts_pred_future = torch.cat([ts_pred_future, ts_past_k_future], dim=-1)
+        if "past_k" in feature_choice:
+            ts_pred_history = torch.cat([ts_pred_history, position_ids_history], dim=-1)
+            ts_pred_future = torch.cat([ts_pred_future, position_ids_future], dim=-1)
+            
+        if "positions" in feature_choice:
+            ts_pred_history = torch.cat([ts_pred_history, ts_past_k_history], dim=-1)
+            ts_pred_future = torch.cat([ts_pred_future, ts_past_k_future], dim=-1)
+            
+        K = 0
+        K_s = 0
+        K_ss = 0
+    
+        if combine_covariates == "separate":
+            K = self.rbf_kernel(covariates_history, covariates_history, **covariate_kwargs.get("rbf"))
+            K += self.linear_kernel(covariates_history, covariates_history, **covariate_kwargs.get("linear"))
+            
+            K_s = self.rbf_kernel(covariates_history, covariates_future, **covariate_kwargs.get("rbf"))
+            K_s += self.linear_kernel(covariates_history, covariates_future, **covariate_kwargs.get("linear"))
+            
+            K_ss = self.rbf_kernel(covariates_future, covariates_future, **covariate_kwargs.get("rbf"))
+            K_ss += self.linear_kernel(covariates_future, covariates_future, **covariate_kwargs.get("linear"))    
+        else:
+            ts_pred_history = torch.cat([ts_pred_history, covariates_history], dim=-1)
+            ts_pred_future = torch.cat([ts_pred_future, covariates_future], dim=-1) 
+        
 
-        K = self.rbf_kernel(ts_pred_history, ts_pred_history, **ts_kwargs.get("rbf"))
-        K += self.linear_kernel(ts_pred_history, ts_pred_history, **ts_kwargs.get("linear"))
-        K += self.rbf_kernel(covariates_history, covariates_history, **covariate_kwargs.get("rbf"))
-        K += self.linear_kernel(covariates_history, covariates_history, **covariate_kwargs.get("linear"))
-        K += self.periodic_kernel(position_ids_history, position_ids_history, **position_kwargs.get("periodic"))
+        for kernel_type in ts_kernels:
+            K += self.kernel(kernel_type)(ts_pred_history, ts_pred_history, **ts_kwargs.get(kernel_type))
+            K_s += self.kernel(kernel_type)(ts_pred_history, ts_pred_future, **ts_kwargs.get(kernel_type))
+            K_ss += self.kernel(kernel_type)(ts_pred_future, ts_pred_future, **ts_kwargs.get(kernel_type))
 
-
-        K_s = self.rbf_kernel(ts_pred_history, ts_pred_future, **ts_kwargs.get("rbf"))
-        K_s += self.linear_kernel(ts_pred_history, ts_pred_future, **ts_kwargs.get("linear"))
-        K_s += self.rbf_kernel(covariates_history, covariates_future, **covariate_kwargs.get("rbf"))
-        K_s += self.linear_kernel(covariates_history, covariates_future, **covariate_kwargs.get("linear"))
-        K_s += self.periodic_kernel(position_ids_history, position_ids_future, **position_kwargs.get("periodic"))
-
-        K_ss = self.rbf_kernel(ts_pred_future, ts_pred_future, **ts_kwargs.get("rbf"))
-        K_ss += self.linear_kernel(ts_pred_future, ts_pred_future, **ts_kwargs.get("linear"))
-        K_ss += self.rbf_kernel(covariates_future, covariates_future, **covariate_kwargs.get("rbf"))
-        K_ss += self.linear_kernel(covariates_future, covariates_future, **covariate_kwargs.get("linear"))
-        K_ss += self.periodic_kernel(position_ids_future, position_ids_future, **position_kwargs.get("periodic"))
+        # if "positions" in feature_choice:
+        #     K += self.periodic_kernel(position_ids_history, position_ids_history, **position_kwargs.get("periodic"))
+        #     K_s += self.periodic_kernel(position_ids_history, position_ids_future, **position_kwargs.get("periodic"))
+        #     K_ss += self.periodic_kernel(position_ids_future, position_ids_future, **position_kwargs.get("periodic"))
 
         if self.has_cat_covariates:
             K += self.rbf_kernel(cat_covariates_history, cat_covariates_history, **cat_covariate_kwargs.get("rbf"))
@@ -937,4 +1277,4 @@ class TwoStageGPAdaptor:
         for i, y_test in results:
             batch_y_test[i] = y_test
 
-        return batch_y_test
+        return batch_y_test 

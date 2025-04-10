@@ -6,7 +6,7 @@ import torch
 from jaxtyping import Float
 from neuralforecast.models import TiDE
 from torch.nn.functional import l1_loss
-
+from tqdm import trange
 
 class TiDEForecastor():
     def __init__(
@@ -129,10 +129,14 @@ class TiDEForecastor():
 
         optimizer = torch.optim.Adam(self.model.parameters(), lr=best_params["learning_rate"])
 
-        for epoch in range(50):
+        for epoch in trange(50, desc="Training TiDE"):
             train_loss = self._train_batch(self.model, optimizer)
             val_loss = self._validate(self.model)
-            print(f"TiDE: Epoch {epoch + 1}: Train Loss = {train_loss:.4f}, Val Loss = {val_loss:.4f}")
+
+            trange(50).set_postfix({
+                "Train Loss": f"{train_loss:.4f}",
+                "Val Loss": f"{val_loss:.4f}"
+            })
 
     def predict(self):
         if self.model is None:

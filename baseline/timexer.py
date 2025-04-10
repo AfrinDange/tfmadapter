@@ -4,13 +4,11 @@ import optuna
 import torch 
 
 from jaxtyping import Float
-from neuralforecast.models import NBEATSx
+from neuralforecast.models import TimeXer
 from torch.nn.functional import l1_loss
 from tqdm import trange
 
-optuna.logging.set_verbosity(optuna.logging.WARNING)
-
-class NBEATSxForecastor():
+class TimeXerForecastor():
     def __init__(
         self,
         past_target: Float[torch.Tensor, "entire_context"],
@@ -45,17 +43,13 @@ class NBEATSxForecastor():
 
         for b in range(0, self.num_train_examples, self.batch_size):
             insample_y = self.x_train[b:b+self.batch_size]
-            insample_mask = torch.ones_like(insample_y, dtype=torch.bool)
             futr_exog = self.futr_cov_train[b:b+self.batch_size]
             y_true = self.y_train[b:b+self.batch_size]
 
             optimizer.zero_grad()
             y_pred = model({
-                "insample_y": insample_y,
-                "insample_mask": insample_mask,
-                "futr_exog": futr_exog,
-                "hist_exog": None,
-                "stat_exog": None,
+                "insample_y": insample_y.unsqueeze(-1),
+                "futr_exog": futr_exog.unsqueeze(1),
             }).squeeze(-1)
 
             loss = l1_loss(y_pred, y_true) 
@@ -77,11 +71,8 @@ class NBEATSxForecastor():
                 y_true = self.y_train[b:b+self.batch_size]
 
                 y_pred = model({
-                    "insample_y": insample_y,
-                    "insample_mask": insample_mask,
-                    "futr_exog": futr_exog,
-                    "hist_exog": None,
-                    "stat_exog": None,
+                    "insample_y": insample_y.unsqueeze(-1),
+                    "futr_exog": futr_exog.unsqueeze(1),
                 }).squeeze(-1)
 
                 loss = l1_loss(y_pred, y_true)
@@ -90,24 +81,28 @@ class NBEATSxForecastor():
         return total_loss / math.ceil(self.num_val_examples / self.batch_size)
     
     def _objective(self, trial):
-        dropout_prob_theta = trial.suggest_float("dropout_prob_theta", low=1e-3, high=0.2, log=True)
-        learning_rate = trial.suggest_float("learning_rate", low=1e-4, high=1e-1, log=True)
+        dropout_prob_theta = trial.suggest_float("dropout_prob_theta", low=0.05, high=0.3, log=True)
+        learning_rate = trial.suggest_float("learning_rate", low=1e-4, high=5e-3, log=True)
+        hidden_size = trial.suggest_categorical("hidden_size", [64, 128])
 
-        model = NBEATSx(
+        model = TimeXer(
             h=self.prediction_length,
             input_size=self.context_length,
+            n_series=1,
             futr_exog_list=self.futr_exog_list,
-            stack_types=['identity', 'trend', 'seasonality'],
-            n_blocks=[1, 1, 1], 
-            mlp_units=[[128, 128], [128, 128], [128, 128]],
-            dropout_prob_theta=dropout_prob_theta,
-            activation="ReLU",
+            patch_len=16,    
+            hidden_size=hidden_size,
+            n_heads=2,            
+            e_layers=1,           
+            d_ff=64,         
+            dropout=dropout_prob_theta,
+            use_norm=True,
             learning_rate=learning_rate,
             max_steps=1000,
             batch_size=self.batch_size,
-            random_seed=42
+            random_seed=42,
         ).cuda()
-
+        
         optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
         for epoch in range(5):
@@ -121,25 +116,28 @@ class NBEATSxForecastor():
         study.optimize(self._objective, n_trials=n_trials)
 
         best_params = study.best_params
-
-        self.model = NBEATSx(
+        
+        self.model = TimeXer(
             h=self.prediction_length,
             input_size=self.context_length,
+            n_series=1,
             futr_exog_list=self.futr_exog_list,
-            stack_types=['identity', 'trend', 'seasonality'],
-            n_blocks=[1, 1, 1], 
-            mlp_units=[[128, 128], [128, 128], [128, 128]],
-            dropout_prob_theta=best_params["dropout_prob_theta"],
-            activation="ReLU",
+            patch_len=16,    
+            hidden_size=best_params["hidden_size"],
+            n_heads=2,            
+            e_layers=1,           
+            d_ff=64,         
+            dropout=best_params["dropout_prob_theta"],
+            use_norm=True,
             learning_rate=best_params["learning_rate"],
             max_steps=1000,
             batch_size=self.batch_size,
-            random_seed=42
+            random_seed=42,
         ).cuda()
 
         optimizer = torch.optim.Adam(self.model.parameters(), lr=best_params["learning_rate"])
 
-        for epoch in trange(50, desc="Training NBEATSx"):
+        for epoch in trange(50, desc="Training TimeXer"):
             train_loss = self._train_batch(self.model, optimizer)
             val_loss = self._validate(self.model)
 
@@ -154,9 +152,9 @@ class NBEATSxForecastor():
 
         with torch.no_grad():
             forecast = self.model({
-                "insample_y": self.x_test,
+                "insample_y": self.x_test.unsqueeze(-1),
                 "insample_mask": torch.ones_like(self.x_test, dtype=torch.bool),
-                "futr_exog": self.futr_cov_test,
+                "futr_exog": self.futr_cov_test.unsqueeze(1),
                 "hist_exog": None,
                 "stat_exog": None,
             })

@@ -60,7 +60,7 @@ parser.add_argument("--validation_metric", type=str, default="mse")
 parser.add_argument("--folds", type=int, required=True)
 parser.add_argument("--remove_pseudo_forecast_generator", action="store_true")
 parser.add_argument("--no_window_selection", action="store_true")
-parser.add_argument("--features_for_selection", type=str, required=True)
+parser.add_argument("--features_for_selection", type=str)
 parser.add_argument("--log_subdir", type=str, required=True)
 
 metrics = [
@@ -133,8 +133,6 @@ def run_eval(ds_name, dataset, args, ds_config, use_covariates, save_dir):
     config = f"{ds_key}/{ds_freq}/{args.model_config}"
     season_length = get_seasonality(dataset.freq)
 
-    #### chronos
-    print(args.model_name, "moirai" in args.model_name)
     if "chronos" in args.model_name:
         if "univariate" in args.model_config:
             predictor = ChronosPredictor(
@@ -165,7 +163,7 @@ def run_eval(ds_name, dataset, args, ds_config, use_covariates, save_dir):
             predictor,
             test_data=dataset.custom_test_data(context_length=ds_config["context_length"], prediction_length=ds_config["prediction_length"], windows=ds_config["windows"], distance=ds_config["distance"]),
             metrics=metrics,
-            batch_size=args.batch_size,
+            # batch_size=args.batch_size,
             axis=None,
             mask_invalid_label=True,
             allow_nan_forecast=False,
@@ -279,7 +277,7 @@ def run_eval(ds_name, dataset, args, ds_config, use_covariates, save_dir):
             tfmpredictor,
             test_data=dataset.custom_test_data(context_length=ds_config["context_length"], prediction_length=ds_config["prediction_length"], windows=ds_config["windows"], distance=ds_config["distance"]),
             metrics=metrics,
-            batch_size=args.batch_size,
+            # batch_size=args.batch_size,
             axis=None,
             mask_invalid_label=True,
             allow_nan_forecast=False,
@@ -301,13 +299,13 @@ def run_eval(ds_name, dataset, args, ds_config, use_covariates, save_dir):
             reg_predictor,
             test_data=dataset.custom_test_data(context_length=ds_config["context_length"], prediction_length=ds_config["prediction_length"], windows=ds_config["windows"], distance=ds_config["distance"]),
             metrics=metrics,
-            batch_size=args.batch_size,
+            # batch_size=args.batch_size,
             axis=None,
             mask_invalid_label=True,
             allow_nan_forecast=False,
             seasonality=season_length
         )
-    elif "nbeatsx" in args.model_name.lower() or "tide" in args.model_name.lower():
+    elif "nbeatsx" in args.model_name.lower() or "tide" in args.model_name.lower() or "timexer" in args.model_name.lower():
         nn_predictor = NNPredictor(
             model_name=args.model_name,
             batch_size=args.batch_size,
@@ -323,7 +321,7 @@ def run_eval(ds_name, dataset, args, ds_config, use_covariates, save_dir):
             nn_predictor,
             test_data=dataset.custom_test_data(context_length=ds_config["context_length"], prediction_length=ds_config["prediction_length"], windows=ds_config["windows"], distance=ds_config["distance"]),
             metrics=metrics,
-            batch_size=args.batch_size,
+            # batch_size=args.batch_size,
             axis=None,
             mask_invalid_label=True,
             allow_nan_forecast=False,
@@ -390,11 +388,8 @@ if __name__ == "__main__":
             ds_config[ds_name]["folds"] = args.folds
             ds_config[ds_name]["remove_pseudo_forecast_generator"] = args.remove_pseudo_forecast_generator
             ds_config[ds_name]["no_window_selection"] = args.no_window_selection
-            ds_config[ds_name]["features_for_selection"] = [features.split(",") for features in args.features_for_selection.split(";")]
+            ds_config[ds_name]["features_for_selection"] = [] #[features.split(",") for features in args.features_for_selection.split(";")]
             
-
-    print(all_datasets)
-
     if "chronos" in args.model_name:
         output_dir = "/workspaces/TST/experiments/gifteval_results_/chronos/"
     elif "moirai" in args.model_name:
@@ -416,7 +411,6 @@ if __name__ == "__main__":
     
     # iterate over datasets
     for ds_name in all_datasets:
-        print(type(ds_config[ds_name]), ds_config[ds_name])
         dataset = Dataset(name=ds_name, to_univariate=ds_config[ds_name]["to_univariate"])
 
         context_length = ds_config[ds_name]["context_length"]

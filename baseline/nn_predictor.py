@@ -16,6 +16,7 @@ from tqdm.auto import tqdm
 
 from .nbeatx import NBEATSxForecastor
 from .tide import TiDEForecastor
+from .timexer import TimeXerForecastor
 
 class WarningFilter(logging.Filter):
     def __init__(self, text_to_filter):
@@ -126,14 +127,18 @@ class NNPredictor:
                 covariates=covariates,
                 ds_config=self.ds_config
             )
+        elif "timexer" in self.model_name.lower():
+            model = TimeXerForecastor(
+                past_target=past_target,
+                covariates=covariates,
+                ds_config=self.ds_config
+            )
         else:
             raise ValueError(f"{self.model_name} not configured")
 
         model.fit(n_trials=16)
 
         y_test = model.predict() # 1 x prediction_length
-
-        print(y_test.shape)
     
         y_test = (y_test.squeeze(0) * ts_std + ts_mean).unsqueeze(0)
 
@@ -158,8 +163,11 @@ class NNPredictor:
         #     results.append(y)
 
         y_test = torch.stack(results)
+        
+        if y_test.dim() == 4:
+            y_test = y_test.squeeze(-1)
 
-        assert y_test.shape[1:] == (1, self.prediction_length)
+        assert y_test.shape[1:] == (1, self.prediction_length), f"{y_test.shape} instead of {(1, self.prediction_length)}"
         return y_test
     
     def predict(self, test_data_input) -> List[Forecast]:

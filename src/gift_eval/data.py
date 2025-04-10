@@ -94,9 +94,7 @@ class MultivariateToUnivariate(Transformation):
     def __call__(
         self, data_it: Iterable[DataEntry], is_train: bool = False
     ) -> Iterator:
-        print("data_it", data_it)
         for data_entry in data_it:
-            print("data_entry item_id", data_entry["item_id"])
             item_id = data_entry["item_id"]
             val_ls = list(data_entry[self.field])
             for id, val in enumerate(val_ls):
@@ -113,13 +111,12 @@ class Dataset:
         to_univariate: bool = False,
         storage_env_var: str = "GIFT_EVAL",
     ):
-        load_dotenv()
+        load_dotenv('/workspaces/TST/fev/gift-eval/.env')
         storage_path = Path(os.getenv(storage_env_var))
         self.hf_dataset = datasets.load_from_disk(str(storage_path / name)).with_format(
             "numpy"
         )
         self.features = self.hf_dataset.features
-        print(self.features)
         process = ProcessDataEntry(
             self.freq,
             one_dim_target=self.target_dim == 1,
@@ -127,7 +124,6 @@ class Dataset:
 
         self.gluonts_dataset = Map(compose(process, itemize_start), self.hf_dataset)
         if to_univariate:
-            print("Applying this!")
             self.gluonts_dataset = MultivariateToUnivariate("target").apply(
                 self.gluonts_dataset
             )

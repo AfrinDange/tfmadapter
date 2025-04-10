@@ -1,16 +1,31 @@
-CUDA_VISIBLE_DEVICES=7 python3 evaluate_model.py \
+# CUDA_VISIBLE_DEVICES=5 python3 evaluate_model.py \
+#     --model_name amazon/chronos-bolt-base \
+#     --dataset_names "temp bafu electricity air_quality climate meteo NP PJM BE DE FR drift chlorine" \
+#     --batch_size 1024 \
+#     --dataset_config dataset_config2 \
+#     --num_past_k 4 \
+#     --pos_dims 16 \
+#     --use_positions \
+#     --model_config chronos_adaptor_with_cov_pospe+ts+cov_com_sep_rbf.matern \
+#     --folds 1 \
+#     --adaptor_method "gaussian_process" \
+#     --features_for_selection "all_covariates,all_past_k,all_positions;all_covariates,all_positions;all_covariates,all_past_k;all_covariates" \
+#     --log_subdir "rebuttal" 
+
+CUDA_VISIBLE_DEVICES=5 python3 evaluate_model.py \
     --model_name amazon/chronos-bolt-base \
-    --dataset_names "NP BE DE FR PJM air_quality meteo temp electricity climate bafu" \
+    --dataset_names "drift chlorine" \
     --batch_size 1024 \
     --dataset_config dataset_config2 \
     --num_past_k 4 \
     --pos_dims 16 \
     --use_positions \
-    --model_config chronos_adaptor__with_cov_gb \
+    --model_config chronos_adaptor_with_cov_pospe+ts+cov_rbf.matern \
     --folds 1 \
-    --adaptor_method "xgboost" \
+    --adaptor_method "gaussian_process" \
     --features_for_selection "all_covariates,all_past_k,all_positions;all_covariates,all_positions;all_covariates,all_past_k;all_covariates" \
-    --log_subdir "gradient_boosting"
+    --log_subdir "rebuttal" \
+    --test_run
 
 # CUDA_VISIBLE_DEVICES=6 python3 evaluate_model.py \
 #     --model_name amazon/chronos-bolt-base \
