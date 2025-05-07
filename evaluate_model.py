@@ -46,6 +46,7 @@ parser.add_argument("--patch_size", type=int, default=32)
 parser.add_argument("--filter_outliers", action="store_true")
 parser.add_argument("--context_length", type=int)
 parser.add_argument("--smaller_context", type=int)
+parser.add_argument("--ablation_context", type=int)
 parser.add_argument("--smallest_history", type=int)
 parser.add_argument("--rolling_window_size", type=int)
 parser.add_argument("--prediction_length", type=int)
@@ -53,6 +54,8 @@ parser.add_argument("--windows", type=int)
 parser.add_argument("--num_past_k", type=int)
 parser.add_argument("--distance", type=int)
 parser.add_argument("--use_fixed_history", action="store_true")
+parser.add_argument("--project_covariates", action="store_true")
+parser.add_argument("--project_half", action="store_true")
 parser.add_argument("--use_positions", action="store_true")
 parser.add_argument("--pos_dims", type=int)
 parser.add_argument('--adaptor_method', nargs="+", type=str, required=True)
@@ -60,6 +63,7 @@ parser.add_argument("--validation_metric", type=str, default="mse")
 parser.add_argument("--folds", type=int, required=True)
 parser.add_argument("--remove_pseudo_forecast_generator", action="store_true")
 parser.add_argument("--no_window_selection", action="store_true")
+parser.add_argument("--random_window_selection", action="store_true")
 parser.add_argument("--features_for_selection", type=str)
 parser.add_argument("--log_subdir", type=str, required=True)
 
@@ -372,7 +376,7 @@ if __name__ == "__main__":
     # list of eval datasets
     all_datasets = list(set(args.dataset_names.split()))
     ds_config=json.load(open(f"{args.dataset_config}.json"))
-
+    
     for config in ["filter_outliers", "context_length", "smaller_context", "smallest_history", "rolling_window_size", "prediction_length", "windows", "num_past_k", "distance", "use_fixed_history", "use_positions", "pos_dims"]:
         if getattr(args, config, None) is not None:
             for ds_name in all_datasets:
@@ -380,7 +384,14 @@ if __name__ == "__main__":
                 ds_config[ds_name][config] = getattr(args, config, None)
     
     use_covariates="with_cov" in args.model_config
-
+    
+    if args.ablation_context is not None:
+        for ds_name in all_datasets:
+            smaller_context = ds_config[ds_name]["context_length"] - args.ablation_context * ds_config[ds_name]['prediction_length']
+            assert smaller_context > 32, f"smaller_context must be greater than 32. Current {smaller_context} for {ds_name}"
+            ds_config[ds_name]["smaller_context"] = smaller_context
+            print(f"Overriding smaller_context for {ds_name} to {smaller_context} = {ds_config[ds_name]['context_length']} - {args.ablation_context} x {ds_config[ds_name]['prediction_length']}")
+            
     if use_covariates: 
         for ds_name in all_datasets:
             ds_config[ds_name]["adaptor_method"] = args.adaptor_method
@@ -388,6 +399,9 @@ if __name__ == "__main__":
             ds_config[ds_name]["folds"] = args.folds
             ds_config[ds_name]["remove_pseudo_forecast_generator"] = args.remove_pseudo_forecast_generator
             ds_config[ds_name]["no_window_selection"] = args.no_window_selection
+            ds_config[ds_name]["random_window_selection"] = args.random_window_selection
+            ds_config[ds_name]["project_covariates"] = args.project_covariates
+            ds_config[ds_name]["project_half"] = args.project_half
             ds_config[ds_name]["features_for_selection"] = [] #[features.split(",") for features in args.features_for_selection.split(";")]
             
     if "chronos" in args.model_name:

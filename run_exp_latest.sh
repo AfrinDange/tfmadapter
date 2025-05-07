@@ -7,11 +7,11 @@
 # model_name="google/timesfm-2.0-500m-pytorch"
 # model="timesfm"
 
-device=7
+device=1
 
 # CUDA_VISIBLE_DEVICES=$device python3 evaluate_model.py \
 #     --model_name $model_name \
-#     --dataset_names "temp bafu electricity air_quality climate meteo NP PJM BE DE FR drift chlorine" \
+#     --dataset_names "bike_sharing" \
 #     --batch_size 1024 \
 #     --dataset_config dataset_config2 \
 #     --num_past_k 4 \
@@ -20,7 +20,8 @@ device=7
 #     --model_config "${model}_univariate" \
 #     --folds 1 \
 #     --adaptor_method "gaussian_process" \
-#     --log_subdir "rebuttal-add-exp" 
+#     --log_subdir "rebuttal-add-exp" \
+#     --test_run
 
 # CUDA_VISIBLE_DEVICES=$device python3 evaluate_model.py \
 #     --model_name $model_name \
@@ -37,7 +38,7 @@ device=7
 
 # CUDA_VISIBLE_DEVICES=$device python3 evaluate_model.py \
 #     --model_name $model_name \
-#     --dataset_names "temp bafu electricity air_quality climate meteo NP PJM BE DE FR drift chlorine" \
+#     --dataset_names "bike_sharing" \
 #     --batch_size 1024 \
 #     --dataset_config dataset_config2 \
 #     --num_past_k 4 \
@@ -63,14 +64,14 @@ device=7
 #     --test_run
 
 CUDA_VISIBLE_DEVICES=$device python3 evaluate_model.py \
-    --model_name nbeatsx_baseline \
+    --model_name tide_baseline \
     --dataset_names "temp bafu electricity air_quality climate meteo NP PJM BE DE FR drift chlorine" \
     --batch_size 1024 \
     --dataset_config dataset_config2 \
     --num_past_k 4 \
     --pos_dims 16 \
     --use_positions \
-    --model_config "nbeatsx_baseline" \
+    --model_config "tide_baseline" \
     --folds 1 \
     --log_subdir "rebuttal-add-exp" \
     --adaptor_method "gaussian_process"

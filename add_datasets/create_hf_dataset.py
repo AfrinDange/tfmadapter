@@ -86,12 +86,7 @@ def load_bench_vldb_datasets():
             correlations[i] = -np.inf  
 
             top_covariates = np.argsort(correlations)[-num_covariates:]
-
-            print(dataset, np.sort(correlations)[-num_covariates:])
-
             selected_covariates.append(data[:, top_covariates])
-
-        continue
 
         feat_dynamic_real = np.array(selected_covariates) # (num_series, series_len, num_covariates)
 
@@ -198,15 +193,15 @@ def load_bike_sharing_datasets():
     freq="h"
     start=pd.to_datetime(data["dteday"][0])
     target=data[target_col].to_numpy()
-    feat_dynamic_real=data[cov_cols].to_numpy().T
-    cat_feat_dynamic_real=data[cat_cov_cols].to_numpy().T
+    feat_dynamic_real=data[cov_cols + cat_cov_cols].to_numpy().T
+    # cat_feat_dynamic_real=data[cat_cov_cols].to_numpy().T
     hfdataset = Dataset.from_dict({
         "item_id": [item_id],
         "start": [start],
         "freq": [freq],
         "target": [target],
         "feat_dynamic_real": [feat_dynamic_real],
-        "cat_feat_dynamic_real": [cat_feat_dynamic_real],
+        # "cat_feat_dynamic_real": [cat_feat_dynamic_real],
     }, info=DatasetInfo(
             description="",
             citation='Jesus Lago, Grzegorz Marcjasz, Bart De Schutter, Rafał Weron. "Forecasting day-ahead electricity prices: A review of state-of-the-art algorithms, best practices and an open-access benchmark". Applied Energy 2021; 293:116983. https://doi.org/10.1016/j.apenergy.2021.116983',
@@ -217,7 +212,7 @@ def load_bike_sharing_datasets():
                 "start": Value("timestamp[s]"),
                 "freq": Value("string"),
                 "target": Sequence(Value("float32")),
-                "feat_dynamic_real": Sequence(Sequence(Value("float32")), length=len(cov_cols)),
+                "feat_dynamic_real": Sequence(Sequence(Value("float32")), length=len(cov_cols + cat_cov_cols)),
             }),
             dataset_name=dataset,
             builder_name="generator",
@@ -235,7 +230,6 @@ def load_general_datasets(dataset, target_col, cov_cols, date_col, freq, citatio
     item_id=dataset
     freq=freq
     start=pd.to_datetime(data[date_col].tolist()[0])
-    print(start)
     target=data[target_col].to_numpy()
     feat_dynamic_real=data[cov_cols].to_numpy().T
     hfdataset = Dataset.from_dict({
@@ -305,6 +299,7 @@ def load_sines_dataset():
 
 
 if __name__ == "__main__":
+    # uncomment to create hf version of the dataset
     # load_epf_datasets()
     # load_bench_vldb_datasets()
     # load_covid_datasets()
@@ -316,6 +311,8 @@ if __name__ == "__main__":
 
     # load_bike_sharing_datasets()
 
-    load_bench_vldb_datasets()
+    # load_bench_vldb_datasets()
+    
+    pass
         
         

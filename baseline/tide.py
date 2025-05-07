@@ -52,7 +52,7 @@ class TiDEForecastor():
                 "futr_exog": futr_exog,
                 "hist_exog": None,
                 "stat_exog": None,
-            })
+            }).squeeze(-1)
 
             loss = l1_loss(y_pred, y_true)
             loss.backward()
@@ -76,7 +76,7 @@ class TiDEForecastor():
                     "futr_exog": futr_exog,
                     "hist_exog": None,
                     "stat_exog": None,
-                })
+                }).squeeze(-1)
 
                 loss = l1_loss(y_pred, y_true)
                 total_loss += loss.item()

@@ -44,6 +44,9 @@ class DataClassConfig:
     folds: int
     remove_pseudo_forecast_generator: bool
     no_window_selection: bool
+    random_window_selection: bool
+    project_covariates: bool
+    project_half: bool
 
 def mae(
     y_true: Float[torch.Tensor, "batch num_test_examples patch_size"], 
