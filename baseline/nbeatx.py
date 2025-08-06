@@ -10,7 +10,7 @@ from tqdm import trange
 
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 
-class NBEATSxForecastor():
+class NBEATSxForecaster():
     def __init__(
         self,
         past_target: Float[torch.Tensor, "entire_context"],

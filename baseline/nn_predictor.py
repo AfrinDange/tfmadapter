@@ -14,9 +14,10 @@ from gluonts.model.forecast import SampleForecast
 from joblib import Parallel, delayed
 from tqdm.auto import tqdm
 
-from .nbeatx import NBEATSxForecastor
-from .tide import TiDEForecastor
-from .timexer import TimeXerForecastor
+from .nbeatx import NBEATSxForecaster
+from .nbeatxg import NBEATSxGForecaster
+from .tide import TiDEForecaster
+from .timexer import TimeXerForecaster
 
 class WarningFilter(logging.Filter):
     def __init__(self, text_to_filter):
@@ -116,19 +117,25 @@ class NNPredictor:
         covariates = (covariates - cov_mean) / cov_std 
 
         if "nbeatsx" in self.model_name.lower():
-            model = NBEATSxForecastor(
+            model = NBEATSxForecaster(
+                past_target=past_target,
+                covariates=covariates,
+                ds_config=self.ds_config
+            )
+        elif "nbeatsxg" in self.model_name.lower():
+            model = NBEATSxGForecaster(
                 past_target=past_target,
                 covariates=covariates,
                 ds_config=self.ds_config
             )
         elif "tide" in self.model_name.lower():
-            model = TiDEForecastor(
+            model = TiDEForecaster(
                 past_target=past_target,
                 covariates=covariates,
                 ds_config=self.ds_config
             )
         elif "timexer" in self.model_name.lower():
-            model = TimeXerForecastor(
+            model = TimeXerForecaster(
                 past_target=past_target,
                 covariates=covariates,
                 ds_config=self.ds_config

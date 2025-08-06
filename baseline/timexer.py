@@ -8,7 +8,7 @@ from neuralforecast.models import TimeXer
 from torch.nn.functional import l1_loss
 from tqdm import trange
 
-class TimeXerForecastor():
+class TimeXerForecaster():
     def __init__(
         self,
         past_target: Float[torch.Tensor, "entire_context"],
