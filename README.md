@@ -58,14 +58,14 @@ VLDB_BENCH=           # Path to /bench-vldb20/Datasets/real_world/
 To convert raw `.csv` datasets into Hugging Face format, run:
 
 ```bash
-python create_hf_dataset.py
+python add_datasets/create_hf_dataset.py
 ```
 
 ## Evaluation
 
 ### Datasets
 
-![Datasets](artefacts/datasets.png)
+<img src="artefacts/datasets.png" width="600"/>
 
 ### Results
 
