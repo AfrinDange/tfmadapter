@@ -1,0 +1,1 @@
+Please run all scripts from the base directory.
