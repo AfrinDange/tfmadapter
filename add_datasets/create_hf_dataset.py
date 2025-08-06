@@ -297,6 +297,56 @@ def load_sines_dataset():
     print(f'Saving dataset to {str(save_path / "sines")}')
     hfdataset.save_to_disk(str(save_path / "sines"))
 
+def load_ett_datasets():
+    datasets=["ETTh1", "ETTh2", "ETTm1", "ETTm2"]
+       
+    for dataset in datasets:
+        data=pd.read_csv(str(storage_path / (dataset+".csv")))
+
+        item_id = dataset
+        start = pd.to_datetime(data['date'][0])
+        freq = dataset[3]
+        
+        if freq == "m":
+            train_length = 34560
+            val_length = 11520
+            test_length = 11520
+        else: # freq is h
+            train_length = 8640
+            val_length = 2880
+            test_length = 2880
+        total_len = train_length + val_length + test_length
+        
+        cols=[col for col in data.columns if col != "date"]
+        target = data[cols].to_numpy()[:total_len].astype(np.float32) # series_len x num_series
+        feat_dynamic_real = data[cols].to_numpy().T[:, :total_len, None].astype(np.float32)
+
+        num_series = len(cols)
+        hfdataset = Dataset.from_dict({
+            "item_id": [item_id] * num_series,
+            "start": [start] * num_series,
+            "freq": [freq] * num_series,
+            "target": [target[:, i] for i in range(num_series)], 
+            "feat_dynamic_real": [feat_dynamic_real[i].T for i in range(num_series)], 
+        }, info=DatasetInfo(
+            description="",
+            citation='https://github.com/zhouhaoyi/ETDataset',
+            homepage="",
+            license="",
+            features = Features({
+                "item_id": Value("string"),
+                "start": Value("timestamp[s]"),
+                "freq": Value("string"),
+                "target": Sequence(feature=Value(dtype='float32', id=None), length=-1, id=None),  # univariate (series_len, )
+                "feat_dynamic_real": Sequence(feature=Sequence(feature=Value("float32"), id=None), length=-1) # covariates (num_covariates, series_len)
+            }),
+            dataset_name=dataset,
+            builder_name="generator",
+        ))
+
+        hfdataset.save_to_disk(str(save_path / dataset))
+
+
 
 if __name__ == "__main__":
     # uncomment to create hf version of the dataset
@@ -313,6 +363,8 @@ if __name__ == "__main__":
 
     # load_bench_vldb_datasets()
     
-    pass
+    load_ett_datasets()
+    
+    # pass
         
         

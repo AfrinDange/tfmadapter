@@ -42,5 +42,9 @@
     "drift":        {"domain": "sensor", "frequency": "6H", "num_variates": 4},  
     "temp":         {"domain": "weather", "frequency": "D", "num_variates": 4},
     "meteo":        {"domain": "meteorology", "frequency": "10T", "num_variates": 4},
-    "bike_sharing": {"domain": "transportation", "frequency": "H", "num_variates": 20}
+    "bike_sharing": {"domain": "transportation", "frequency": "H", "num_variates": 20},
+    "etth1": {"domain": "Energy", "frequency": "H", "num_variates": 1},
+    "etth2": {"domain": "Energy", "frequency": "H", "num_variates": 1},
+    "ettm1": {"domain": "Energy", "frequency": "15T", "num_variates": 1},
+    "ettm2": {"domain": "Energy", "frequency": "15T", "num_variates": 1}
 }
