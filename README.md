@@ -41,6 +41,26 @@ CUDA_VISIBLE_DEVICES=$device python3 evaluate_model.py \
   - `moirai_univariate`, `moirai_covariate`
   - `timesfm_univariate`
 
+### Setup
+
+Setup environment using instructions provided in the GIFT-eval repository.  
+**Do not install Chronos, Moirai, or TimesFM from pip**. Use the versions provided in the base directory.
+
+Create a `.env` file in the base directory to specify dataset paths:
+
+```bash
+GIFT_EVAL=            # Path to gift-eval datasets
+RAW_DATA=             # Path to raw .csv files for time series datasets
+LSF_PATH=             # Path to ETT datasets
+VLDB_BENCH=           # Path to /bench-vldb20/Datasets/real_world/
+```
+
+To convert raw `.csv` datasets into Hugging Face format, run:
+
+```bash
+python create_hf_dataset.py
+```
+
 ## Evaluation
 
 ### Datasets
