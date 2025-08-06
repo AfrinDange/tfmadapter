@@ -47,6 +47,7 @@ class DataClassConfig:
     random_window_selection: bool
     project_covariates: bool
     project_half: bool
+    use_covariates: int
 
 def mae(
     y_true: Float[torch.Tensor, "batch num_test_examples patch_size"], 

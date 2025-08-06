@@ -5,6 +5,7 @@ import json
 import os
 
 from dotenv import load_dotenv
+from pathlib import Path
 from gluonts.time_feature import get_seasonality
 from gluonts.ev.metrics import (
     MSE,
@@ -15,6 +16,7 @@ from gluonts.ev.metrics import (
     RMSE,
     NRMSE,
 )
+from filtered_smape import filteredSMAPE
 from gluonts.model import evaluate_model as evaluate_model
 from uni2ts.eval_util.evaluation import evaluate_model as evaluate_moirai
 from gluonts.time_feature import get_seasonality
@@ -56,6 +58,7 @@ parser.add_argument("--distance", type=int)
 parser.add_argument("--use_fixed_history", action="store_true")
 parser.add_argument("--project_covariates", action="store_true")
 parser.add_argument("--project_half", action="store_true")
+parser.add_argument("--use_covariates", type=int, default=None)
 parser.add_argument("--use_positions", action="store_true")
 parser.add_argument("--pos_dims", type=int)
 parser.add_argument('--adaptor_method', nargs="+", type=str, required=True)
@@ -75,6 +78,7 @@ metrics = [
     SMAPE(),
     RMSE(),
     NRMSE(),
+    filteredSMAPE()
 ]
 
 dataset_properties_map = json.load(open("notebooks/dataset_properties.json"))
@@ -104,6 +108,7 @@ def create_result_logger(csv_file_path):
                     "eval_metrics/sMAPE[0.5]",
                     "eval_metrics/RMSE[mean]",
                     "eval_metrics/NRMSE[mean]",
+                    "eval_metrics/filtered-sMAPE[0.5]",
                     "domain",
                     "num_variates",
                     "history",
@@ -254,8 +259,9 @@ def run_eval(ds_name, dataset, args, ds_config, use_covariates, save_dir):
                 use_positional_embedding=False,
                 output_patch_len=128,
             ),
-            checkpoint=timesfm.TimesFmCheckpoint(
-                huggingface_repo_id=args.model_name),
+            checkpoint=Path("/workspaces/TST/experiments/timesfm-2.0-500m-pytorch/"),
+            # checkpoint=timesfm.TimesFmCheckpoint(
+            #     huggingface_repo_id=args.model_name),
         )
         if "univariate" in args.model_config:
             tfmpredictor = TimesFmPredictor(
@@ -349,6 +355,7 @@ def run_eval(ds_name, dataset, args, ds_config, use_covariates, save_dir):
                     res["sMAPE[0.5]"][0],
                     res["RMSE[mean]"][0],
                     res["NRMSE[mean]"][0],
+                    res["filtered-sMAPE[0.5]"][0],
                     dataset_properties_map[ds_key]["domain"],
                     dataset_properties_map[ds_key]["num_variates"],
                     ds_config["context_length"],
@@ -365,10 +372,10 @@ def run_eval(ds_name, dataset, args, ds_config, use_covariates, save_dir):
                 ]
             )
 
-        print(f'{args.model_config}:\tMAE={res["MAE[0.5]"][0]}, sMAPE={res["MAPE[0.5]"][0]}, RMSE={res["RMSE[mean]"][0]}')
+        print(f'{args.model_config}:\tMAE={res["MAE[0.5]"][0]}, sMAPE={res["sMAPE[0.5]"][0]}, RMSE={res["RMSE[mean]"][0]}')
         print(f"Results for {ds_name} have been written to {csv_file_path}")
     else:
-        print(f'{args.model_config}:\tMAE={res["MAE[0.5]"][0]}, sMAPE={res["MAPE[0.5]"][0]}, RMSE={res["RMSE[mean]"][0]}')
+        print(f'{args.model_config}:\tMAE={res["MAE[0.5]"][0]}, sMAPE={res["sMAPE[0.5]"][0]}, RMSE={res["RMSE[mean]"][0]}')
 
 if __name__ == "__main__":
     args = parser.parse_args()
@@ -402,6 +409,7 @@ if __name__ == "__main__":
             ds_config[ds_name]["random_window_selection"] = args.random_window_selection
             ds_config[ds_name]["project_covariates"] = args.project_covariates
             ds_config[ds_name]["project_half"] = args.project_half
+            ds_config[ds_name]["use_covariates"] = args.use_covariates
             ds_config[ds_name]["features_for_selection"] = [] #[features.split(",") for features in args.features_for_selection.split(";")]
             
     if "chronos" in args.model_name:

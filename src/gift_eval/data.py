@@ -247,8 +247,21 @@ class Dataset:
         return test_data
 
     def custom_test_data(self, context_length, prediction_length, windows, distance) -> TestData:
+        # if "etth" in self.name.lower():
+        #     train_length = 8640
+        #     val_length = 2880
+        #     offset = train_length + val_length
+        #     print(f"Setting offset to {offset}")
+        # elif "ettm" in self.name.lower():
+        #     train_length = 34560
+        #     val_length = 11520
+        #     offset = train_length + val_length
+        #     print(f"Setting offset to {offset}")
+        # else:
+        offset = - prediction_length * windows
+            
         _, test_template = split(
-            self.gluonts_dataset, offset=-prediction_length * windows
+            self.gluonts_dataset, offset=offset
         )
         test_data = test_template.generate_instances(
             prediction_length=prediction_length,
