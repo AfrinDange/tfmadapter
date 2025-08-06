@@ -9,8 +9,6 @@ model="moirai"
 
 device=2
 
-# "temp bafu electricity air_quality climate meteo NP PJM BE DE FR drift chlorine"
-
 for abctx in 3 5 8
 do
     CUDA_VISIBLE_DEVICES=$device python3 evaluate_model.py \
